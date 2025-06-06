@@ -181,6 +181,11 @@ export interface Trs80Type {
 	// This is useful for testing/development without requiring the actual emulator.
 	useMock?: boolean;
 
+	// Register format: 'hex' (default) or 'decimal'. 
+	// Determines how register values are parsed from the TRS-80GP protocol.
+	// The mock server always outputs hexadecimal format.
+	registerFormat?: 'hex' | 'decimal';
+
 	// TRS-80GP emulator launch configuration
 	emulator?: Trs80EmulatorConfig;
 }
@@ -671,6 +676,8 @@ export class Settings {
 			launchCfg.trs80.port = 49152;  // 49152 = 48K addressable memory (TRS-80 Model I/III), decrement for multiple emulators
 		if (launchCfg.trs80.useMock === undefined)
 			launchCfg.trs80.useMock = false;  // Default to using the real emulator if available
+		if (launchCfg.trs80.registerFormat === undefined)
+			launchCfg.trs80.registerFormat = 'hex';  // Default to hexadecimal format
 		if (!launchCfg.trs80.socketTimeout)
 			launchCfg.trs80.socketTimeout = 5;	// 5 secs
 

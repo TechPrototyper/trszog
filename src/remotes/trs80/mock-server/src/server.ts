@@ -1,24 +1,17 @@
+/**
+ * Mock TRS-80GP Server
+ * 
+ * This implements a simple mock server that simulates the TRS-80GP emulator's JSON-RPC interface
+ * for testing the DeZog debugger extension without requiring the actual emulator.
+ */
+
 import * as net from 'net';
-import * as fs from 'fs';
 
-/**
- * Interface for parsed BDS file data
- */
-interface BdsData {
-    files: Map<number, string>;           // File ID -> File path
-    labels: Map<string, number>;          // Label name -> Address
-    binaryData: Map<number, Uint8Array>;  // Address -> Binary data
-    usage: Map<string, number[]>;         // Label -> Usage addresses
-}
-
-/**
- * JSON-RPC message interface
- */
 interface JsonRpcMessage {
     jsonrpc: string;
+    id?: number | string;
     method?: string;
     params?: any;
-    id?: number | string;
     result?: any;
     error?: {
         code: number;
@@ -27,189 +20,165 @@ interface JsonRpcMessage {
     };
 }
 
-/**
- * Mock CPU state for Z80
- */
-interface CpuState {
-    A: number;
-    F: number;
-    B: number;
-    C: number;
-    D: number;
-    E: number;
-    H: number;
-    L: number;
-    IX: number;
-    IY: number;
-    SP: number;
-    PC: number;
-    AF_: number;
-    BC_: number;
-    DE_: number;
-    HL_: number;
-    I: number;
-    R: number;
+interface Breakpoint {
+    address: number | string;
 }
 
-/**
- * Mock TRS-80GP emulator server that provides intelligent responses
- * based on BDS file data for testing zmac integration.
- */
-export class MockTrs80GpServer {
+interface TRS80GPState {
+    // CPU Registers
+    registers: {
+        A: number;
+        F: number;
+        B: number;
+        C: number;
+        D: number;
+        E: number;
+        H: number;
+        L: number;
+        IX: number;
+        IY: number;
+        SP: number;
+        PC: number;
+        I: number;
+        R: number;
+        // Alternate registers
+        AF_: number;
+        BC_: number;
+        DE_: number;
+        HL_: number;
+    };
+    // Memory
+    memory: Uint8Array;
+    // Breakpoints
+    breakpoints: Array<Breakpoint>;
+    // Running state
+    running: boolean;
+    paused: boolean;
+}
+
+class MockTRS80GPServer {
     private server: net.Server;
+    private clients: net.Socket[] = [];
     private port: number;
-    private bdsData: BdsData | null = null;
-    private memory: Uint8Array;
-    private cpuState: CpuState;
-    private breakpoints: number[] = [];
-    private isRunning = false;
-
-    constructor(port: number = 49152) {
-        this.port = port;
-        this.memory = new Uint8Array(65536); // 64K memory
-        this.cpuState = this.createInitialCpuState();
-        this.server = net.createServer(this.handleConnection.bind(this));
-    }
+    private emulatorState: TRS80GPState;
+    private symbolsMap: Map<string, number> = new Map();
 
     /**
-     * Create initial CPU state
+     * Initialize registers with random values according to the agreed-upon rules:
+     * - BC: random value between 0x0000 and 0x03FF
+     * - HL: random value between 0x3C00 and 0x4FFF  
+     * - DE: random value between 0x3C00 and 0x4400
+     * - AF: random value between 0x0100 and 0x1111
+     * - SP: high value decreased by 16 * random(0x00-0x0F)
+     * - PC: keep current value (0x6000) for now (would be from BDS file)
+     * - Backup registers (_) set to complement values
      */
-    private createInitialCpuState(): CpuState {
+    private initializeRegisters(): any {
+        // Generate random values according to specifications
+        const bc = Math.floor(Math.random() * (0x03FF - 0x0000 + 1)) + 0x0000;
+        const hl = Math.floor(Math.random() * (0x4FFF - 0x3C00 + 1)) + 0x3C00;
+        const de = Math.floor(Math.random() * (0x4400 - 0x3C00 + 1)) + 0x3C00;
+        const af = Math.floor(Math.random() * (0x1111 - 0x0100 + 1)) + 0x0100;
+        
+        // SP: start high and decrease by 16 * random number between 0x00 and 0x0F
+        const spDecrease = Math.floor(Math.random() * 0x10) * 16;
+        const sp = 0xFFFF - spDecrease;
+        
+        // PC: keep at 0x6000 for now (would come from BDS file)
+        const pc = 0x6000;
+        
+        // Calculate individual register components
+        const a = (af & 0xFF00) >> 8;
+        const f = af & 0x00FF;
+        const b = (bc & 0xFF00) >> 8;
+        const c = bc & 0x00FF;
+        const d = (de & 0xFF00) >> 8;
+        const e = de & 0x00FF;
+        const h = (hl & 0xFF00) >> 8;
+        const l = hl & 0x00FF;
+        
+        // Set backup registers to complement values
+        const af_ = af ^ 0xFFFF;
+        const bc_ = bc ^ 0xFFFF;
+        const de_ = de ^ 0xFFFF;
+        const hl_ = hl ^ 0xFFFF;
+        
         return {
-            A: 0, F: 0, B: 0, C: 0, D: 0, E: 0, H: 0, L: 0,
-            IX: 0, IY: 0, SP: 0xFFFF, PC: 0x0000,
-            AF_: 0, BC_: 0, DE_: 0, HL_: 0, I: 0, R: 0
+            A: a, F: f, B: b, C: c, D: d, E: e, H: h, L: l,
+            IX: 0, IY: 0, SP: sp, PC: pc,
+            I: 0, R: 0, AF_: af_, BC_: bc_, DE_: de_, HL_: hl_
         };
     }
 
-    /**
-     * Load and parse a BDS file for intelligent mock responses
-     */
-    public loadBdsFile(bdsFilePath: string): void {
-        try {
-            if (!fs.existsSync(bdsFilePath)) {
-                console.warn(`BDS file not found: ${bdsFilePath}`);
-                return;
-            }
+    constructor(port: number) {
+        this.port = port;
 
-            const content = fs.readFileSync(bdsFilePath, 'utf-8');
-            this.bdsData = this.parseBdsFile(content);
-            console.log(`Loaded BDS file: ${bdsFilePath}`);
-            console.log(`- ${this.bdsData.files.size} files`);
-            console.log(`- ${this.bdsData.labels.size} labels`);
-            console.log(`- ${this.bdsData.binaryData.size} binary data entries`);
-
-            // Set PC to the first label address if available
-            if (this.bdsData.labels.size > 0) {
-                const firstLabel = Array.from(this.bdsData.labels.values())[0];
-                this.cpuState.PC = firstLabel;
-                console.log(`Set initial PC to: 0x${firstLabel.toString(16)}`);
-            }
-
-            // Load binary data into memory
-            for (const [address, data] of this.bdsData.binaryData) {
-                if (address + data.length <= this.memory.length) {
-                    this.memory.set(data, address);
-                }
-            }
-        } catch (error) {
-            console.error(`Failed to load BDS file: ${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
-
-    /**
-     * Parse BDS file content (correct zmac BDS format)
-     */
-    private parseBdsFile(content: string): BdsData {
-        const data: BdsData = {
-            files: new Map(),
-            labels: new Map(),
-            binaryData: new Map(),
-            usage: new Map()
+        // Initialize emulator state with randomized register values
+        this.emulatorState = {
+            registers: this.initializeRegisters(),
+            memory: new Uint8Array(65536), // 64K of memory
+            breakpoints: [],
+            running: false,
+            paused: true
         };
-
-        const lines = content.split('\n');
         
-        for (const line of lines) {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) continue;
-
-            // Parse file references (format: "0000 0000 f hello.asm")
-            const fileMatch = trimmedLine.match(/^[0-9a-f]+ [0-9a-f]+ f (.+)$/i);
-            if (fileMatch) {
-                const fileName = fileMatch[1];
-                data.files.set(data.files.size, fileName);
-                continue;
-            }
-
-            // Parse binary data lines (format: "6000 6000 d cdc901")
-            const dataMatch = trimmedLine.match(/^([0-9a-f]+) [0-9a-f]+ d ([0-9a-f]+)$/i);
-            if (dataMatch) {
-                const address = parseInt(dataMatch[1], 16);
-                const hexData = dataMatch[2];
-                const binaryData = this.hexStringToUint8Array(hexData);
-                data.binaryData.set(address, binaryData);
-                continue;
-            }
-
-            // Parse labels (format: "6000 a main" or "600c a hello_msg")
-            const labelMatch = trimmedLine.match(/^([0-9a-f]+) a (.+)$/i);
-            if (labelMatch) {
-                const address = parseInt(labelMatch[1], 16);
-                const label = labelMatch[2];
-                data.labels.set(label, address);
-                continue;
-            }
-
-            // Skip other line types (s, u, e) for now as they're not essential for basic debugging
-        }
-
-        return data;
+        // Initialize memory with some test values
+        this.initializeMemory();
+        
+        // Create server
+        this.server = net.createServer((socket) => this.handleConnection(socket));
     }
 
-    /**
-     * Convert hex string to Uint8Array
-     */
-    private hexStringToUint8Array(hexString: string): Uint8Array {
-        const cleanHex = hexString.replace(/\s/g, '');
-        const bytes = new Uint8Array(cleanHex.length / 2);
-        for (let i = 0; i < cleanHex.length; i += 2) {
-            bytes[i / 2] = parseInt(cleanHex.substr(i, 2), 16);
-        }
-        return bytes;
+    public start(): void {
+        this.server.listen(this.port, () => {
+            console.log(`Mock TRS-80GP server listening on port ${this.port}`);
+        });
+
+        this.server.on('error', (err) => {
+            console.error(`Server error: ${err.message}`);
+        });
     }
 
-    /**
-     * Handle incoming socket connections
-     */
+    public stop(): void {
+        this.clients.forEach(client => client.destroy());
+        this.clients = [];
+        this.server.close(() => {
+            console.log('Mock TRS-80GP server stopped');
+        });
+    }
+
     private handleConnection(socket: net.Socket): void {
-        console.log(`Client connected from ${socket.remoteAddress}:${socket.remotePort}`);
-        
-        let dataBuffer = '';
+        console.log(`Client connected: ${socket.remoteAddress}:${socket.remotePort}`);
+        this.clients.push(socket);
 
-        socket.on('data', (data: Buffer) => {
-            dataBuffer += data.toString();
+        let buffer = '';
+
+        socket.on('data', (data) => {
+            buffer += data.toString();
             
-            // Process complete JSON-RPC messages (newline-delimited)
+            // Process complete messages
             let newlineIndex;
-            while ((newlineIndex = dataBuffer.indexOf('\n')) !== -1) {
-                const messageStr = dataBuffer.substring(0, newlineIndex).trim();
-                dataBuffer = dataBuffer.substring(newlineIndex + 1);
+            while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+                const messageStr = buffer.substring(0, newlineIndex).trim();
+                buffer = buffer.substring(newlineIndex + 1);
                 
                 if (messageStr.length > 0) {
                     try {
-                        const message: JsonRpcMessage = JSON.parse(messageStr);
-                        this.handleJsonRpcMessage(socket, message);
-                    } catch (err) {
-                        console.error(`Failed to parse JSON-RPC message: ${messageStr}`);
-                        this.sendError(socket, null, -32700, 'Parse error');
+                        const message = JSON.parse(messageStr) as JsonRpcMessage;
+                        this.handleJsonRpcMessage(message, socket);
+                    } catch (error) {
+                        console.error(`Failed to parse message: ${messageStr}`);
                     }
                 }
             }
         });
 
         socket.on('close', () => {
-            console.log('Client disconnected');
+            console.log(`Client disconnected: ${socket.remoteAddress}:${socket.remotePort}`);
+            const index = this.clients.indexOf(socket);
+            if (index !== -1) {
+                this.clients.splice(index, 1);
+            }
         });
 
         socket.on('error', (err) => {
@@ -217,414 +186,470 @@ export class MockTrs80GpServer {
         });
     }
 
-    /**
-     * Handle JSON-RPC messages
-     */
-    private handleJsonRpcMessage(socket: net.Socket, message: JsonRpcMessage): void {
-        console.log(`Received: ${message.method} (id: ${message.id})`);
+    private handleJsonRpcMessage(message: JsonRpcMessage, socket: net.Socket): void {
+        console.log(`Received message: ${JSON.stringify(message)}`);
 
+        // Only handle requests (messages with a method)
         if (!message.method) {
-            this.sendError(socket, message.id, -32600, 'Invalid Request');
             return;
         }
 
-        try {
-            switch (message.method) {
-                case 'initialize':
-                    this.handleInitialize(socket, message);
-                    break;
-                case 'launch':
-                    this.handleLaunch(socket, message);
-                    break;
-                case 'getRegisters':
-                    this.handleGetRegisters(socket, message);
-                    break;
-                case 'setRegister':
-                    this.handleSetRegister(socket, message);
-                    break;
-                case 'readMemory':
-                    this.handleReadMemory(socket, message);
-                    break;
-                case 'writeMemory':
-                    this.handleWriteMemory(socket, message);
-                    break;
-                case 'setBreakpoints':
-                    this.handleSetBreakpoints(socket, message);
-                    break;
-                case 'continue':
-                    this.handleContinue(socket, message);
-                    break;
-                case 'pause':
-                    this.handlePause(socket, message);
-                    break;
-                case 'stepInto':
-                    this.handleStepInto(socket, message);
-                    break;
-                case 'stepOver':
-                    this.handleStepOver(socket, message);
-                    break;
-                case 'loadObj':
-                    this.handleLoadObj(socket, message);
-                    break;
-                case 'saveObj':
-                    this.handleSaveObj(socket, message);
-                    break;
-                default:
-                    this.sendError(socket, message.id, -32601, `Method not found: ${message.method}`);
-            }
-        } catch (error) {
-            this.sendError(socket, message.id, -32603, `Internal error: ${error instanceof Error ? error.message : String(error)}`);
+        let response: JsonRpcMessage | null = null;
+
+        switch (message.method) {
+            case 'initialize':
+                response = {
+                    jsonrpc: '2.0',
+                    id: message.id,
+                    result: {
+                        programName: 'Mock TRS-80GP',
+                        version: '1.0.0',
+                        modelName: 'TRS-80 Model I',
+                        modelNumber: 1
+                    }
+                };
+                break;
+                
+            case 'getRegisters':
+                response = {
+                    jsonrpc: '2.0',
+                    id: message.id,
+                    result: this.formatRegistersAsHex()
+                };
+                break;
+
+            case 'setRegister':
+                if (message.params && typeof message.params.register === 'string' &&
+                    typeof message.params.value === 'number') {
+                    const reg = message.params.register;
+                    const value = message.params.value;
+                    
+                    if (reg in this.emulatorState.registers) {
+                        // Update register value
+                        (this.emulatorState.registers as any)[reg] = value;
+                        
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            result: true
+                        };
+                    } else {
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            error: {
+                                code: -32602,
+                                message: `Invalid register name: ${reg}`
+                            }
+                        };
+                    }
+                } else {
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        error: {
+                            code: -32602,
+                            message: 'Invalid params for setRegister'
+                        }
+                    };
+                }
+                break;
+
+            case 'readMemory':
+                if (message.params) {
+                    // Support both number and hexadecimal string address formats
+                    let address: number;
+                    let size: number;
+                    
+                    // Parse address (accept both number and hex string)
+                    if (typeof message.params.address === 'number') {
+                        address = message.params.address;
+                    } else if (typeof message.params.address === 'string' && message.params.address.startsWith('0x')) {
+                        address = parseInt(message.params.address.substring(2), 16);
+                    } else {
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            error: {
+                                code: -32602,
+                                message: 'Invalid address format - must be a number or hex string (0xNNNN)'
+                            }
+                        };
+                        break;
+                    }
+                    
+                    // Parse size
+                    if (typeof message.params.size === 'number') {
+                        size = message.params.size;
+                    } else {
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            error: {
+                                code: -32602,
+                                message: 'Invalid size parameter'
+                            }
+                        };
+                        break;
+                    }
+                    
+                    if (address >= 0 && address + size <= this.emulatorState.memory.length) {
+                        // Extract the memory segment
+                        const memorySlice = this.emulatorState.memory.slice(address, address + size);
+                        
+                        // Convert to hex string
+                        const hexData = Buffer.from(memorySlice).toString('hex');
+                        
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            result: {
+                                // Return address as hex string for consistency
+                                address: `0x${address.toString(16).padStart(4, '0')}`,
+                                size: size,
+                                data: hexData
+                            }
+                        };
+                    } else {
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            error: {
+                                code: -32602,
+                                message: 'Memory address out of range'
+                            }
+                        };
+                    }
+                } else {
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        error: {
+                            code: -32602,
+                            message: 'Invalid params for readMemory'
+                        }
+                    };
+                }
+                break;
+
+            case 'writeMemory':
+                if (message.params && typeof message.params.data === 'string') {
+                    // Support both number and hexadecimal string address formats
+                    let address: number;
+                    
+                    // Parse address (accept both number and hex string)
+                    if (typeof message.params.address === 'number') {
+                        address = message.params.address;
+                    } else if (typeof message.params.address === 'string' && message.params.address.startsWith('0x')) {
+                        address = parseInt(message.params.address.substring(2), 16);
+                    } else {
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            error: {
+                                code: -32602,
+                                message: 'Invalid address format - must be a number or hex string (0xNNNN)'
+                            }
+                        };
+                        break;
+                    }
+                    
+                    const data = Buffer.from(message.params.data, 'hex');
+                    
+                    if (address >= 0 && address + data.length <= this.emulatorState.memory.length) {
+                        // Copy data into memory
+                        for (let i = 0; i < data.length; i++) {
+                            this.emulatorState.memory[address + i] = data[i];
+                        }
+                        
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            result: true
+                        };
+                    } else {
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            error: {
+                                code: -32602,
+                                message: 'Memory address out of range'
+                            }
+                        };
+                    }
+                } else {
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        error: {
+                            code: -32602,
+                            message: 'Invalid params for writeMemory'
+                        }
+                    };
+                }
+                break;
+
+            case 'continue':
+                this.emulatorState.running = true;
+                this.emulatorState.paused = false;
+                
+                response = {
+                    jsonrpc: '2.0',
+                    id: message.id,
+                    result: true
+                };
+                
+                // Simulate a breakpoint hit after a short delay
+                setTimeout(() => {
+                    if (this.emulatorState.running) {
+                        // Increment PC by some amount to simulate execution
+                        this.emulatorState.registers.PC += 10;
+                        
+                        // Notify about pause/breakpoint
+                        const notification: JsonRpcMessage = {
+                            jsonrpc: '2.0',
+                            method: 'breakpoint',
+                            params: {
+                                address: this.emulatorState.registers.PC
+                            }
+                        };
+                        
+                        socket.write(JSON.stringify(notification) + '\n');
+                        
+                        this.emulatorState.running = false;
+                        this.emulatorState.paused = true;
+                    }
+                }, 1000);
+                break;
+
+            case 'pause':
+                this.emulatorState.running = false;
+                this.emulatorState.paused = true;
+                
+                response = {
+                    jsonrpc: '2.0',
+                    id: message.id,
+                    result: true
+                };
+                
+                // Notify about pause
+                setTimeout(() => {
+                    const notification: JsonRpcMessage = {
+                        jsonrpc: '2.0',
+                        method: 'paused',
+                        params: {
+                            reason: 'user_request'
+                        }
+                    };
+                    
+                    socket.write(JSON.stringify(notification) + '\n');
+                }, 100);
+                break;
+
+            case 'stepInto':
+                // Increment PC to simulate a single step
+                this.emulatorState.registers.PC += 1;
+                
+                response = {
+                    jsonrpc: '2.0',
+                    id: message.id,
+                    result: true
+                };
+                
+                // Notify about step completed
+                setTimeout(() => {
+                    const notification: JsonRpcMessage = {
+                        jsonrpc: '2.0',
+                        method: 'paused',
+                        params: {
+                            reason: 'step_complete',
+                            address: this.emulatorState.registers.PC
+                        }
+                    };
+                    
+                    socket.write(JSON.stringify(notification) + '\n');
+                }, 100);
+                break;
+
+            case 'stepOver':
+                // Increment PC by more than 1 to simulate step over
+                this.emulatorState.registers.PC += 3;
+                
+                response = {
+                    jsonrpc: '2.0',
+                    id: message.id,
+                    result: true
+                };
+                
+                // Notify about step completed
+                setTimeout(() => {
+                    const notification: JsonRpcMessage = {
+                        jsonrpc: '2.0',
+                        method: 'paused',
+                        params: {
+                            reason: 'step_complete',
+                            address: this.emulatorState.registers.PC
+                        }
+                    };
+                    
+                    socket.write(JSON.stringify(notification) + '\n');
+                }, 100);
+                break;
+
+            case 'setBreakpoints':
+                if (message.params && Array.isArray(message.params.breakpoints)) {
+                    // Store breakpoints - support both hexadecimal strings and numbers
+                    this.emulatorState.breakpoints = message.params.breakpoints.map((bp: Breakpoint) => {
+                        // If the address is provided as a hex string, convert it to a number
+                        if (typeof bp.address === 'string' && bp.address.startsWith('0x')) {
+                            return { address: parseInt(bp.address.substring(2), 16) };
+                        }
+                        return bp;
+                    });
+                    
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        result: true
+                    };
+                } else {
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        error: {
+                            code: -32602,
+                            message: 'Invalid params for setBreakpoints'
+                        }
+                    };
+                }
+                break;
+
+            case 'loadObj':
+                if (message.params && typeof message.params.filePath === 'string') {
+                    // Simulate loading a program by setting PC to start address
+                    this.emulatorState.registers.PC = 0x6000; // Default TRS-80 program start address
+                    
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        result: {
+                            success: true,
+                            startAddress: 0x6000,
+                            endAddress: 0x6100,
+                            entryPoint: 0x6000
+                        }
+                    };
+                } else {
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        error: {
+                            code: -32602,
+                            message: 'Invalid params for loadObj'
+                        }
+                    };
+                }
+                break;
+
+            case 'saveObj':
+                if (message.params && 
+                    typeof message.params.startAddress === 'number' &&
+                    typeof message.params.endAddress === 'number' &&
+                    typeof message.params.filePath === 'string') {
+                    
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        result: {
+                            success: true
+                        }
+                    };
+                } else {
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        error: {
+                            code: -32602,
+                            message: 'Invalid params for saveObj'
+                        }
+                    };
+                }
+                break;
+
+            default:
+                response = {
+                    jsonrpc: '2.0',
+                    id: message.id,
+                    error: {
+                        code: -32601,
+                        message: `Method not found: ${message.method}`
+                    }
+                };
+                break;
+        }
+
+        if (response) {
+            console.log(`Sending response: ${JSON.stringify(response)}`);
+            socket.write(JSON.stringify(response) + '\n');
         }
     }
 
     /**
-     * Handle initialize request
+     * Format register values as hexadecimal strings for protocol output
      */
-    private handleInitialize(socket: net.Socket, message: JsonRpcMessage): void {
-        const result = {
-            supportsReadMemoryRequest: true,
-            supportsWriteMemoryRequest: true,
-            programName: 'Mock TRS-80GP',
-            version: '1.0.0',
-            machineType: 'TRS-80 Model I',
-            capabilities: ['debugging', 'memory', 'breakpoints']
+    private formatRegistersAsHex(): any {
+        const regs = this.emulatorState.registers;
+        return {
+            A: `0x${regs.A.toString(16).toUpperCase().padStart(2, '0')}`,
+            F: `0x${regs.F.toString(16).toUpperCase().padStart(2, '0')}`,
+            B: `0x${regs.B.toString(16).toUpperCase().padStart(2, '0')}`,
+            C: `0x${regs.C.toString(16).toUpperCase().padStart(2, '0')}`,
+            D: `0x${regs.D.toString(16).toUpperCase().padStart(2, '0')}`,
+            E: `0x${regs.E.toString(16).toUpperCase().padStart(2, '0')}`,
+            H: `0x${regs.H.toString(16).toUpperCase().padStart(2, '0')}`,
+            L: `0x${regs.L.toString(16).toUpperCase().padStart(2, '0')}`,
+            IX: `0x${regs.IX.toString(16).toUpperCase().padStart(4, '0')}`,
+            IY: `0x${regs.IY.toString(16).toUpperCase().padStart(4, '0')}`,
+            SP: `0x${regs.SP.toString(16).toUpperCase().padStart(4, '0')}`,
+            PC: `0x${regs.PC.toString(16).toUpperCase().padStart(4, '0')}`,
+            I: `0x${regs.I.toString(16).toUpperCase().padStart(2, '0')}`,
+            R: `0x${regs.R.toString(16).toUpperCase().padStart(2, '0')}`,
+            AF_: `0x${regs.AF_.toString(16).toUpperCase().padStart(4, '0')}`,
+            BC_: `0x${regs.BC_.toString(16).toUpperCase().padStart(4, '0')}`,
+            DE_: `0x${regs.DE_.toString(16).toUpperCase().padStart(4, '0')}`,
+            HL_: `0x${regs.HL_.toString(16).toUpperCase().padStart(4, '0')}`
         };
-        this.sendResponse(socket, message.id, result);
     }
 
-    /**
-     * Handle launch request - MVP protocol
-     */
-    private handleLaunch(socket: net.Socket, message: JsonRpcMessage): void {
-        const params = message.params || {};
-        const program = params.program || 'default.cmd';
-        const startAddress = params.startAddress || 0x4F00;
-        
-        console.log(`Launch: program=${program}, startAddress=0x${startAddress.toString(16)}`);
-        
-        // Set PC to start address
-        if (typeof startAddress === 'number') {
-            this.cpuState.PC = startAddress;
-        } else if (typeof startAddress === 'string') {
-            // Handle hex string format
-            this.cpuState.PC = parseInt(startAddress.replace('0x', ''), 16);
+    private initializeMemory(): void {
+        // Initialize with some recognizable pattern
+        for (let i = 0; i < this.emulatorState.memory.length; i++) {
+            this.emulatorState.memory[i] = i & 0xFF;
         }
-        
-        const result = {
-            status: 'launched',
-            program: program,
-            startAddress: this.cpuState.PC
-        };
-        this.sendResponse(socket, message.id, result);
-    }
 
-    /**
-     * Update dynamic register values to simulate a running program
-     */
-    private updateDynamicRegisters(): void {
-        // HL points to a RAM address, starting at 0x3C00 (video RAM) and moving around
-        const hlBase = 0x3C00;
-        const hlOffset = Math.floor(Math.random() * 0xC400); // Random offset up to end of RAM
-        const hlValue = (hlBase + hlOffset) & 0xFFFF;
-        this.cpuState.H = (hlValue >> 8) & 0xFF;
-        this.cpuState.L = hlValue & 0xFF;
-        
-        // BC represents a counter, random number less than 0x1000
-        const bcValue = Math.floor(Math.random() * 0x1000);
-        this.cpuState.B = (bcValue >> 8) & 0xFF;
-        this.cpuState.C = bcValue & 0xFF;
-        
-        // DE and AF are random 16-bit hex values
-        const deValue = Math.floor(Math.random() * 0x10000);
-        this.cpuState.D = (deValue >> 8) & 0xFF;
-        this.cpuState.E = deValue & 0xFF;
-        
-        const afValue = Math.floor(Math.random() * 0x10000);
-        this.cpuState.A = (afValue >> 8) & 0xFF;
-        this.cpuState.F = afValue & 0xFF;
-        
-        // PC should be a realistic address - if we have BDS data, use a random label address
-        if (this.bdsData && this.bdsData.labels.size > 0) {
-            const labelAddresses = Array.from(this.bdsData.labels.values());
-            this.cpuState.PC = labelAddresses[Math.floor(Math.random() * labelAddresses.length)];
-        } else {
-            // Otherwise use a random address in the program area (0x4000-0x8000)
-            this.cpuState.PC = 0x4000 + Math.floor(Math.random() * 0x4000);
-        }
-        
-        // Update R register to simulate instruction execution
-        this.cpuState.R = (this.cpuState.R + Math.floor(Math.random() * 10)) & 0x7F;
-    }
-
-    /**
-     * Handle get registers request
-     */
-    private handleGetRegisters(socket: net.Socket, message: JsonRpcMessage): void {
-        // Update registers to show dynamic values
-        this.updateDynamicRegisters();
-        this.sendResponse(socket, message.id, this.cpuState);
-    }
-
-    /**
-     * Handle set register request
-     */
-    private handleSetRegister(socket: net.Socket, message: JsonRpcMessage): void {
-        const { register, value } = message.params || {};
-        if (register && typeof value === 'number') {
-            if (register in this.cpuState) {
-                (this.cpuState as any)[register] = value & 0xFFFF;
-                console.log(`Set register ${register} = 0x${value.toString(16)}`);
-            }
-        }
-        this.sendResponse(socket, message.id, { success: true });
-    }
-
-    /**
-     * Handle read memory request
-     */
-    private handleReadMemory(socket: net.Socket, message: JsonRpcMessage): void {
-        const { address, size } = message.params || {};
-        if (typeof address === 'number' && typeof size === 'number') {
-            const start = Math.max(0, address);
-            const end = Math.min(this.memory.length, start + size);
-            const data = this.memory.slice(start, end);
+        // Load some test code into memory
+        const program = Buffer.from([
+            // Simple hello world program (Starting at 0x6000)
+            0xCD, 0xC9, 0x01,             // CALL $01C9 (Clear screen)
+            0x21, 0x0C, 0x60,             // LD HL, hello_msg
+            0xCD, 0x1B, 0x02,             // CALL $021B (Print string)
+            0xC3, 0x2D, 0x40,             // JP $402D (Return to DOS)
             
-            const result = {
-                address: start,
-                size: end - start,
-                data: Buffer.from(data).toString('hex')
-            };
-            
-            console.log(`Read memory: 0x${start.toString(16)}-0x${end.toString(16)} (${end - start} bytes)`);
-            this.sendResponse(socket, message.id, result);
-        } else {
-            this.sendError(socket, message.id, -32602, 'Invalid params: address and size required');
-        }
-    }
+            // "Hello, TRS-80 World!" string at 0x600C
+            0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x54, 
+            0x52, 0x53, 0x2D, 0x38, 0x30, 0x20, 0x57, 0x6F, 
+            0x72, 0x6C, 0x64, 0x21, 0x0D, 0x00  // Null-terminated
+        ]);
 
-    /**
-     * Handle write memory request
-     */
-    private handleWriteMemory(socket: net.Socket, message: JsonRpcMessage): void {
-        const { address, data } = message.params || {};
-        if (typeof address === 'number' && typeof data === 'string') {
-            const bytes = Buffer.from(data, 'hex');
-            const start = Math.max(0, address);
-            const end = Math.min(this.memory.length, start + bytes.length);
-            
-            this.memory.set(bytes.slice(0, end - start), start);
-            console.log(`Write memory: 0x${start.toString(16)} (${bytes.length} bytes)`);
-            this.sendResponse(socket, message.id, { success: true });
-        } else {
-            this.sendError(socket, message.id, -32602, 'Invalid params: address and data required');
-        }
-    }
+        // Copy program into memory at 0x6000
+        program.copy(Buffer.from(this.emulatorState.memory.buffer), 0x6000);
 
-    /**
-     * Handle set breakpoints request
-     */
-    private handleSetBreakpoints(socket: net.Socket, message: JsonRpcMessage): void {
-        const { breakpoints } = message.params || {};
-        if (Array.isArray(breakpoints)) {
-            this.breakpoints = breakpoints.map((bp: any) => bp.address).filter((addr: any) => typeof addr === 'number');
-            console.log(`Set breakpoints: ${this.breakpoints.map(addr => '0x' + addr.toString(16)).join(', ')}`);
-            this.sendResponse(socket, message.id, { success: true, count: this.breakpoints.length });
-        } else {
-            this.sendError(socket, message.id, -32602, 'Invalid params: breakpoints array required');
-        }
-    }
-
-    /**
-     * Handle continue execution request
-     */
-    private handleContinue(socket: net.Socket, message: JsonRpcMessage): void {
-        this.isRunning = true;
-        console.log('Continue execution');
-        this.sendResponse(socket, message.id, { success: true });
-        
-        // Simulate hitting a breakpoint after a short delay
-        setTimeout(() => {
-            if (this.isRunning && this.breakpoints.length > 0) {
-                const hitBp = this.breakpoints[0];
-                this.cpuState.PC = hitBp;
-                this.isRunning = false;
-                console.log(`Breakpoint hit at 0x${hitBp.toString(16)}`);
-                this.sendNotification(socket, 'breakpoint', { address: hitBp, registers: this.cpuState });
-            }
-        }, 1000);
-    }
-
-    /**
-     * Handle pause execution request
-     */
-    private handlePause(socket: net.Socket, message: JsonRpcMessage): void {
-        this.isRunning = false;
-        console.log('Pause execution');
-        this.sendResponse(socket, message.id, { success: true });
-        this.sendNotification(socket, 'paused', { registers: this.cpuState });
-    }
-
-    /**
-     * Handle step into request
-     */
-    private handleStepInto(socket: net.Socket, message: JsonRpcMessage): void {
-        this.cpuState.PC = (this.cpuState.PC + 1) & 0xFFFF;
-        console.log(`Step into: PC = 0x${this.cpuState.PC.toString(16)}`);
-        this.sendResponse(socket, message.id, { success: true });
-        this.sendNotification(socket, 'stepped', { registers: this.cpuState });
-    }
-
-    /**
-     * Handle step over request
-     */
-    private handleStepOver(socket: net.Socket, message: JsonRpcMessage): void {
-        this.cpuState.PC = (this.cpuState.PC + 2) & 0xFFFF; // Assume 2-byte instruction
-        console.log(`Step over: PC = 0x${this.cpuState.PC.toString(16)}`);
-        this.sendResponse(socket, message.id, { success: true });
-        this.sendNotification(socket, 'stepped', { registers: this.cpuState });
-    }
-
-    /**
-     * Handle load object file request
-     */
-    private handleLoadObj(socket: net.Socket, message: JsonRpcMessage): void {
-        const { filePath } = message.params || {};
-        console.log(`Load object file: ${filePath}`);
-        
-        // In a real implementation, this would load the file into memory
-        // For the mock, we'll just acknowledge the request
-        this.sendResponse(socket, message.id, { success: true, filePath });
-    }
-
-    /**
-     * Handle save object file request
-     */
-    private handleSaveObj(socket: net.Socket, message: JsonRpcMessage): void {
-        const { startAddress, endAddress, filePath } = message.params || {};
-        console.log(`Save object file: ${filePath} (0x${startAddress?.toString(16)}-0x${endAddress?.toString(16)})`);
-        
-        // In a real implementation, this would save memory to file
-        // For the mock, we'll just acknowledge the request
-        this.sendResponse(socket, message.id, { success: true, filePath });
-    }
-
-    /**
-     * Send JSON-RPC response
-     */
-    private sendResponse(socket: net.Socket, id: any, result: any): void {
-        const response: JsonRpcMessage = {
-            jsonrpc: '2.0',
-            id: id,
-            result: result
-        };
-        socket.write(JSON.stringify(response) + '\n');
-    }
-
-    /**
-     * Send JSON-RPC error
-     */
-    private sendError(socket: net.Socket, id: any, code: number, message: string, data?: any): void {
-        const response: JsonRpcMessage = {
-            jsonrpc: '2.0',
-            id: id,
-            error: { code, message, data }
-        };
-        socket.write(JSON.stringify(response) + '\n');
-    }
-
-    /**
-     * Send JSON-RPC notification
-     */
-    private sendNotification(socket: net.Socket, method: string, params?: any): void {
-        const notification: JsonRpcMessage = {
-            jsonrpc: '2.0',
-            method: method,
-            params: params
-        };
-        socket.write(JSON.stringify(notification) + '\n');
-    }
-
-    /**
-     * Start the mock server
-     */
-    public start(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            this.server.listen(this.port, () => {
-                console.log(`Mock TRS-80GP server listening on port ${this.port}`);
-                resolve();
-            });
-
-            this.server.on('error', (err) => {
-                reject(err);
-            });
-        });
-    }
-
-    /**
-     * Stop the mock server
-     */
-    public stop(): Promise<void> {
-        return new Promise((resolve) => {
-            this.server.close(() => {
-                console.log('Mock TRS-80GP server stopped');
-                resolve();
-            });
-        });
-    }
-
-    /**
-     * Get information about loaded BDS data
-     */
-    public getBdsInfo(): string {
-        if (!this.bdsData) {
-            return 'No BDS file loaded';
-        }
-
-        const lines = [
-            'BDS File Information:',
-            `- Files: ${this.bdsData.files.size}`,
-            `- Labels: ${this.bdsData.labels.size}`,
-            `- Binary data entries: ${this.bdsData.binaryData.size}`,
-            `- Usage entries: ${this.bdsData.usage.size}`,
-            ''
-        ];
-
-        if (this.bdsData.labels.size > 0) {
-            lines.push('Labels:');
-            for (const [label, address] of this.bdsData.labels) {
-                lines.push(`  ${label}: 0x${address.toString(16)}`);
-            }
-        }
-
-        return lines.join('\n');
+        // Add some symbols for testing
+        this.symbolsMap.set("main", 0x6000);
+        this.symbolsMap.set("hello_msg", 0x600C);
     }
 }
 
-// CLI interface for running the mock server
-if (require.main === module) {
-    const server = new MockTrs80GpServer();
-    
-    // Check for BDS file argument
-    const bdsFile = process.argv[2];
-    if (bdsFile) {
-        server.loadBdsFile(bdsFile);
-    }
-
-    // Start server
-    server.start().then(() => {
-        console.log('Mock TRS-80GP server started successfully');
-        if (bdsFile) {
-            console.log(server.getBdsInfo());
-        }
-    }).catch((err) => {
-        console.error(`Failed to start server: ${err.message}`);
-        process.exit(1);
-    });
-
-    // Handle graceful shutdown
-    process.on('SIGINT', async () => {
-        console.log('\nShutting down mock server...');
-        await server.stop();
-        process.exit(0);
-    });
-}
+// Start the server with command-line port argument or default 49152
+const port = process.argv.length > 2 ? parseInt(process.argv[2], 10) : 49152;
+new MockTRS80GPServer(port).start();

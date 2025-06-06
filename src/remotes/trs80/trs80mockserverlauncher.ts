@@ -14,8 +14,27 @@ export class Trs80MockServerLauncher {
 
     constructor(port: number = 49152) {
         this.mockServerPort = port;
-        // Get the path to the mock server relative to the extension
-        this.mockServerPath = path.join(Utility.getExtensionPath(), 'src', 'remotes', 'trs80', 'mock-server');
+        
+        // Get the path to the mock server
+        // First try finding the path relative to the current execution context (for tests)
+        const basePath = process.cwd();
+        const devPath = path.join(basePath, 'src', 'remotes', 'trs80', 'mock-server');
+        const outPath = path.join(basePath, 'out', 'src', 'remotes', 'trs80', 'mock-server');
+        
+        if (fs.existsSync(devPath)) {
+            this.mockServerPath = devPath;
+        } else if (fs.existsSync(outPath)) {
+            this.mockServerPath = outPath;
+        } else {
+            // Fall back to extension path as a last resort
+            const extensionPath = Utility.getExtensionPath();
+            if (extensionPath) {
+                this.mockServerPath = path.join(extensionPath, 'out', 'src', 'remotes', 'trs80', 'mock-server');
+            } else {
+                // For testing without extension context, use source directory
+                this.mockServerPath = path.join(basePath, 'src', 'remotes', 'trs80', 'mock-server');
+            }
+        }
     }
 
     /**
@@ -23,8 +42,11 @@ export class Trs80MockServerLauncher {
      * @returns Promise that resolves when the server is ready
      */
     public async start(): Promise<void> {
-        // Check if mock server files exist
-        const serverScriptPath = path.join(this.mockServerPath, 'dist', 'server.js');
+        // Check if mock server files exist - try both dist/ and direct locations
+        let serverScriptPath = path.join(this.mockServerPath, 'dist', 'server.js');
+        if (!fs.existsSync(serverScriptPath)) {
+            serverScriptPath = path.join(this.mockServerPath, 'server.js');
+        }
         const packageJsonPath = path.join(this.mockServerPath, 'package.json');
 
         if (!fs.existsSync(packageJsonPath)) {
@@ -38,6 +60,7 @@ export class Trs80MockServerLauncher {
 
         // Start the mock server process
         return new Promise((resolve, reject) => {
+            console.log(`Starting mock server from: ${serverScriptPath}`);
             this.mockServerProcess = spawn('node', [serverScriptPath, this.mockServerPort.toString()], {
                 cwd: this.mockServerPath,
                 stdio: ['ignore', 'pipe', 'pipe']
@@ -121,6 +144,7 @@ export class Trs80MockServerLauncher {
      */
     private async buildMockServer(): Promise<void> {
         return new Promise((resolve, reject) => {
+            console.log(`Building mock server at: ${this.mockServerPath}`);
             const buildProcess = spawn('npm', ['run', 'build'], {
                 cwd: this.mockServerPath,
                 stdio: ['ignore', 'pipe', 'pipe']
