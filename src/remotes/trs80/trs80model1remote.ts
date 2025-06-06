@@ -1,0 +1,154 @@
+import {Trs80GpRemote} from './trs80gpremote';
+import {DzrpMachineType} from '../dzrp/dzrpremote';
+
+/**
+ * TRS-80 Model 1 Remote implementation.
+ * 
+ * The TRS-80 Model 1 has specific characteristics:
+ * - 48KB RAM (4000h-FFFFh)
+ * - Video RAM at 3C00h-3FFFh (1KB)
+ * - ROM at 0000h-2FFFh (12KB Level II BASIC)
+ * - Flat memory model (no banking)
+ * - 64x16 text display (128x48 pixels with block graphics)
+ */
+export class Trs80Model1Remote extends Trs80GpRemote {
+
+    /**
+     * Get the DZRP machine type for TRS-80 Model 1.
+     */
+    protected getTrs80GpMachineType(): DzrpMachineType {
+        return DzrpMachineType.TRS80_MODEL1;
+    }
+
+    /**
+     * Initialize connection with Model 1 specific parameters.
+     */
+    public async sendDzrpCmdInit(): Promise<{error: string | undefined; programName: string; dzrpVersion: string; machineType: DzrpMachineType}> {
+        try {
+            const result = await this.sendTrs80GpJsonRpcRequest('initialize', {
+                clientName: 'DeZog',
+                version: '1.0.0',
+                machineType: 'model1'
+            });
+            
+            return {
+                error: undefined,
+                programName: result?.programName || 'trs80gp',
+                dzrpVersion: result?.version || '1.0.0',
+                machineType: DzrpMachineType.TRS80_MODEL1
+            };
+        } catch (err) {
+            return {
+                error: `Failed to initialize TRS-80 Model 1 connection: ${err.message}`,
+                programName: 'trs80gp',
+                dzrpVersion: '1.0.0',
+                machineType: DzrpMachineType.TRS80_MODEL1
+            };
+        }
+    }
+
+    /**
+     * Model 1 has flat memory - no banking support.
+     */
+    public async sendDzrpCmdGetSlots(): Promise<void> {
+        // Model 1 has flat memory, emit empty slots
+        this.emit('received-slots-data', []);
+    }
+
+    /**
+     * Model 1 memory write with address validation.
+     */
+    public async sendDzrpCmdWriteMem(address: number, data: Uint8Array): Promise<void> {
+        // Validate address ranges for Model 1.
+        // While this is technically correct, the emulator will handle this anyways.
+        // So on a TRS-80, you can execute statement which write to a ROM address, alas nothing will happen.
+        // But we leave this in here.
+        if (address >= 0x0000 && address <= 0x2FFF) {
+            throw new Error(`Cannot write to ROM area (${address.toString(16).toUpperCase()}h) on TRS-80 Model 1`);
+        }
+
+        // We can uncomment this if it comes in handy, but usually the emulator will properly handle this:
+        // if (address >= 0x3000 && address <= 0x3BFF) {
+        //     throw new Error(`Cannot write to unmapped area (${address.toString(16).toUpperCase()}h) on TRS-80 Model 1`);
+        // }
+
+        // Allow writes to Video RAM (3C00h-3FFFh) and System RAM (4000h-FFFFh)
+        await super.sendDzrpCmdWriteMem(address, data);
+    }
+
+    /**
+     * Load a /CMD file for Model 1.
+     * CMD files have a specific format with load address and execution address.
+     */
+    public async sendDzrpCmdLoadObj(filePath: string): Promise<void> {
+        try {
+            await this.sendTrs80GpJsonRpcRequest('loadCmd', {
+                filePath: filePath,
+                machineType: 'model1'
+            });
+        } catch (err) {
+            throw new Error(`Failed to load CMD file on TRS-80 Model 1: ${err.message}`);
+        }
+    }
+
+    /**
+     * Save a /CMD file for Model 1.
+     */
+    public async sendDzrpCmdSaveObj(startAddress: number, endAddress: number, filePath: string, execAddress?: number): Promise<void> {
+        try {
+            await this.sendTrs80GpJsonRpcRequest('saveCmd', {
+                startAddress: startAddress,
+                endAddress: endAddress,
+                filePath: filePath,
+                execAddress: execAddress || startAddress,
+                machineType: 'model1'
+            });
+        } catch (err) {
+            throw new Error(`Failed to save CMD file on TRS-80 Model 1: ${err.message}`);
+        }
+    }
+
+    /**
+     * Model 1 specific register handling.
+     * The TRS-80 Model 1 exposes standard Z80 registers.
+     */
+    protected convertTrs80GpRegistersToDeZog(registers: any): Uint16Array {
+        const regData = new Uint16Array(20);
+        
+        // Standard Z80 register mapping for Model 1
+        if (registers) {
+            regData[0] = registers.AF || 0;      // AF
+            regData[1] = registers.BC || 0;      // BC  
+            regData[2] = registers.DE || 0;      // DE
+            regData[3] = registers.HL || 0;      // HL
+            regData[4] = registers.IX || 0;      // IX
+            regData[5] = registers.IY || 0;      // IY
+            regData[6] = registers.SP || 0;      // SP
+            regData[7] = registers.PC || 0;      // PC
+            regData[8] = registers.AF2 || 0;     // AF'
+            regData[9] = registers.BC2 || 0;     // BC'
+            regData[10] = registers.DE2 || 0;    // DE'
+            regData[11] = registers.HL2 || 0;    // HL'
+            regData[12] = registers.I || 0;      // I
+            regData[13] = registers.R || 0;      // R
+        }
+        
+        return regData;
+    }
+
+    /**
+     * Handle Model 1 specific notifications from the emulator.
+     */
+    protected handleTrs80GpNotification(method: string, params: any): void {
+        switch (method) {
+            case 'model1_rom_access':
+                this.emit('debug_console', `TRS-80 Model 1: ROM access at ${params?.address}`);
+                break;
+            case 'model1_video_update':
+                this.emit('debug_console', `TRS-80 Model 1: Video RAM update at ${params?.address}`);
+                break;
+            default:
+                super.handleTrs80GpNotification(method, params);
+        }
+    }
+}

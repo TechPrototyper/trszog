@@ -16,6 +16,7 @@ import {Z80RegistersStandardDecoder} from '../z80registersstandarddecoder';
 import {PromiseCallbacks} from '../../misc/promisecallbacks';
 import {MemoryModelZx128k, MemoryModelZx16k, MemoryModelZx48k} from '../MemoryModel/zxspectrummemorymodels';
 import {MemoryModelZxNextOneROM} from '../MemoryModel/zxnextmemorymodels';
+import {MemoryModelTrs80Model1, MemoryModelTrs80Model3} from '../MemoryModel/trs80memorymodels';
 import {DzrpTransportTest} from './dzrptransporttest';
 import {LogEval} from '../../misc/logeval';
 
@@ -98,6 +99,8 @@ export enum DzrpMachineType {
 	ZX48K = 2,
 	ZX128K = 3,
 	ZXNEXT = 4,
+	TRS80_MODEL1 = 5,
+	TRS80_MODEL3 = 6,
 }
 
 /** This interface is passed after a break occurs and contains
@@ -254,6 +257,14 @@ export class DzrpRemote extends RemoteBase {
 				case DzrpMachineType.ZXNEXT:
 					// ZxNext: 8x8k banks
 					this.memoryModel = new MemoryModelZxNextOneROM();
+					break;
+				case DzrpMachineType.TRS80_MODEL1:
+					// TRS-80 Model 1: 12KB ROM + Video RAM + 48KB RAM (same layout as Model 3)
+					this.memoryModel = new MemoryModelTrs80Model1();
+					break;
+				case DzrpMachineType.TRS80_MODEL3:
+					// TRS-80 Model 3: 12KB ROM + Video RAM + 48KB RAM
+					this.memoryModel = new MemoryModelTrs80Model3();
 					break;
 				default:
 					// Error: Unknown type
