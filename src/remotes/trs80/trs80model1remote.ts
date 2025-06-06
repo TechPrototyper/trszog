@@ -113,25 +113,11 @@ export class Trs80Model1Remote extends Trs80GpRemote {
      * The TRS-80 Model 1 exposes standard Z80 registers.
      */
     protected convertTrs80GpRegistersToDeZog(registers: any): Uint16Array {
-        const regData = new Uint16Array(20);
+        // Use the base class implementation which handles format parsing
+        const regData = super.convertTrs80GpRegistersToDeZog(registers);
         
-        // Standard Z80 register mapping for Model 1
-        if (registers) {
-            regData[0] = registers.AF || 0;      // AF
-            regData[1] = registers.BC || 0;      // BC  
-            regData[2] = registers.DE || 0;      // DE
-            regData[3] = registers.HL || 0;      // HL
-            regData[4] = registers.IX || 0;      // IX
-            regData[5] = registers.IY || 0;      // IY
-            regData[6] = registers.SP || 0;      // SP
-            regData[7] = registers.PC || 0;      // PC
-            regData[8] = registers.AF2 || 0;     // AF'
-            regData[9] = registers.BC2 || 0;     // BC'
-            regData[10] = registers.DE2 || 0;    // DE'
-            regData[11] = registers.HL2 || 0;    // HL'
-            regData[12] = registers.I || 0;      // I
-            regData[13] = registers.R || 0;      // R
-        }
+        // Model 1 can add any model-specific register handling here if needed
+        // For now, the base implementation is sufficient
         
         return regData;
     }

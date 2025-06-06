@@ -297,10 +297,57 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      * Subclasses can override this for model-specific register handling.
      */
     protected convertTrs80GpRegistersToDeZog(registers: any): Uint16Array {
-        // This is a simplified conversion - in a real implementation
-        // you would properly convert the TRS-80 register format
         const regData = new Uint16Array(20); // Adjust size as needed
-        // TODO: Fill regData with actual register values from registers
+        
+        if (!registers) {
+            return regData;
+        }
+
+        // Get the register format from configuration
+        const registerFormat = Settings.launch.trs80.registerFormat || 'hex';
+        
+        // Parse register values based on the configured format
+        const parseRegisterValue = (value: any): number => {
+            if (typeof value === 'number') {
+                return value;
+            }
+            
+            if (typeof value === 'string') {
+                if (registerFormat === 'hex') {
+                    // Parse as hexadecimal (supports "0x" prefix or plain hex)
+                    return parseInt(value.replace(/^0x/i, ''), 16) || 0;
+                } else {
+                    // Parse as decimal
+                    return parseInt(value, 10) || 0;
+                }
+            }
+            
+            return 0;
+        };
+
+        // Standard Z80 register mapping according to Z80_REG enum
+        // PC=0, SP=1, AF=2, BC=3, DE=4, HL=5, IX=6, IY=7, AF2=8, BC2=9, DE2=10, HL2=11, IR=12, IM=13
+        regData[0] = parseRegisterValue(registers.PC);      // PC
+        regData[1] = parseRegisterValue(registers.SP);      // SP
+        regData[2] = parseRegisterValue(registers.AF);      // AF
+        regData[3] = parseRegisterValue(registers.BC);      // BC  
+        regData[4] = parseRegisterValue(registers.DE);      // DE
+        regData[5] = parseRegisterValue(registers.HL);      // HL
+        regData[6] = parseRegisterValue(registers.IX);      // IX
+        regData[7] = parseRegisterValue(registers.IY);      // IY
+        regData[8] = parseRegisterValue(registers.AF2 || registers.AF_);  // AF'
+        regData[9] = parseRegisterValue(registers.BC2 || registers.BC_);  // BC'
+        regData[10] = parseRegisterValue(registers.DE2 || registers.DE_); // DE'
+        regData[11] = parseRegisterValue(registers.HL2 || registers.HL_); // HL'
+        
+        // Handle I and R registers - they might be separate or combined
+        const iValue = parseRegisterValue(registers.I);
+        const rValue = parseRegisterValue(registers.R);
+        regData[12] = (iValue << 8) | rValue;  // IR combined
+        
+        // IM register
+        regData[13] = parseRegisterValue(registers.IM);
+        
         return regData;
     }
 

@@ -1,7 +1,7 @@
 {
   "name": "mock-trs80gp-server",
   "version": "1.0.0",
-  "description": "Mock TRS-80GP emulator server for testing DeZog zmac integration",
+  "description": "Mock TRS-80GP emulator server for testing DeZog TRS-80 integration",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
