@@ -6,6 +6,7 @@ import {SjasmplusSldLabelParser} from './sjasmplussldlabelparser';
 import {Z80asmLabelParser} from './z80asmlabelparser';
 import {Z88dkLabelParser} from './z88dklabelparser';
 import {Z88dkLabelParserV2} from './z88dklabelparserv2';
+import {ZmacLabelParser} from './zmaclabelparser';
 import {ReverseEngineeringLabelParser} from './reverseengineeringlabelparser';
 import {SettingsParameters} from '../settings/settings';
 import {Issue, LabelParserBase} from './labelparserbase';
@@ -237,6 +238,14 @@ export class LabelsClass {
 		if (mainConfig.z88dkv2) {
 			const parser = new Z88dkLabelParserV2(memoryModel, this.fileLineNrs, this.lineArrays, this.labelsForNumber64k, this.labelsForLongAddress, this.numberForLabel, this.labelLocations, this.watchPointLines, this.assertionLines, this.logPointLines, issueHandler);
 			for (const config of mainConfig.z88dkv2) {
+				this.loadAsmListFile(parser, config);
+			}
+		}
+
+		// zmac
+		if (mainConfig.zmac) {
+			const parser = new ZmacLabelParser(memoryModel, this.fileLineNrs, this.lineArrays, this.labelsForNumber64k, this.labelsForLongAddress, this.numberForLabel, this.labelLocations, this.watchPointLines, this.assertionLines, this.logPointLines, issueHandler);
+			for (const config of mainConfig.zmac) {
 				this.loadAsmListFile(parser, config);
 			}
 		}

@@ -67,7 +67,7 @@
 	},
 	"devDependencies": {
 		"@types/mocha": "10.0.10",
-		"@types/node": "^18.18.2",
+		"@types/node": "^18.19.111",
 		"@types/vscode": "^1.96.0",
 		"@types/vscode-webview": "^1.57.5",
 		"esbuild": "^0.25.0",
@@ -402,7 +402,8 @@
 									"cspect",
 									"zsim",
 									"zxnext",
-									"mame"
+									"mame",
+									"trs80gp"
 								],
 								"description": "It is possible to use DeZog with different remotes. Here you choose the type, i.e. 'zrcp' (ZEsarUX), 'zxnext' or 'zsim' (internal Z80 simulator). Note: Certain features or properties are not available in all types.",
 								"default": "zsim"
@@ -880,6 +881,91 @@
 									}
 								}
 							},
+							"trs80": {
+								"description": "The configuration for debugging with TRS-80GP emulator.",
+								"type": "object",
+								"properties": {
+									"hostname": {
+										"type": "string",
+										"description": "The hostname/IP address of the TRS-80GP socket.",
+										"default": "localhost"
+									},
+									"port": {
+										"type": "number",
+										"description": "The port of the TRS-80GP socket.",
+										"default": 49152
+									},
+									"socketTimeout": {
+										"type": "number",
+										"description": "In secs. If no response is received within this time the connection is disconnected. Usually you don't need to change this value. Defaults to 5 seconds.",
+										"default": 5
+									},
+									"emulator": {
+										"description": "TRS-80GP emulator launch configuration.",
+										"type": "object",
+										"properties": {
+											"path": {
+												"type": "string",
+												"description": "Path to the trs80gp executable."
+											},
+											"model": {
+												"type": "number",
+												"enum": [1, 3, 4],
+												"description": "TRS-80 model to emulate. 1 = Model I, 3 = Model III, 4 = Model 4.",
+												"default": 1
+											},
+											"memorySize": {
+												"type": "number",
+												"description": "Memory size in KB. Model I: 4, 16, 48; Model III: 16, 48; Model 4: 64, 128.",
+												"default": 48
+											},
+											"diskImages": {
+												"type": "object",
+												"description": "Disk images to mount in the emulator.",
+												"properties": {
+													"drive0": {
+														"type": "string",
+														"description": "Path to disk image for drive 0."
+													},
+													"drive1": {
+														"type": "string",
+														"description": "Path to disk image for drive 1."
+													}
+												}
+											},
+											"cassetteImage": {
+												"type": "string",
+												"description": "Path to cassette tape image to load."
+											},
+											"symbolsFile": {
+												"type": "string",
+												"description": "Path to symbols file to load for debugging."
+											},
+											"enableSerial": {
+												"type": "boolean",
+												"description": "Enable serial/JSON-RPC interface for debugging.",
+												"default": true
+											},
+											"additionalArgs": {
+												"type": "array",
+												"items": {
+													"type": "string"
+												},
+												"description": "Additional command line arguments for the emulator."
+											},
+											"workingDirectory": {
+												"type": "string",
+												"description": "Working directory for the emulator process."
+											},
+											"autoStart": {
+												"type": "boolean",
+												"description": "Automatically start the emulator when debugging begins.",
+												"default": true
+											}
+										}
+									}
+								}
+							},
 							"unitTests": {
 								"description": "Whether the configuration contains the unit tests or not. Default: false.",
 								"type": "boolean"
@@ -1013,6 +1099,34 @@
 											"type": "string",
 											"description": "The map file is required to correctly parse the label values and to get correct file/line to address associations.",
 											"default": 0
+										}
+									}
+								}
+							},
+							"zmac": {
+								"description": "All zmac .bds files. (Typically only one, but it's possible to add more here.)",
+								"type": "array",
+								"items": {
+									"type": "object",
+									"required": [
+										"path"
+									],
+									"properties": {
+										"path": {
+											"type": "string",
+											"description": "Path to the zmac .bds (Binary Debuggable Source) file."
+										},
+										"srcDirs": {
+											"type": "array",
+											"description": "If defined the files referenced in the .bds file will be used for stepping otherwise the .bds file itself will be used. The source directories are given here as an array of strings. All dirs are relative to the 'rootFolder'.",
+											"default": [
+												""
+											]
+										},
+										"excludeFiles": {
+											"type": "array",
+											"description": "An array of glob patterns with filenames to exclude. The filenames (from the 'include' statement) that do match will not be associated with executed addresses. I.e. those source files are not shown during stepping. You normally only need this if you have multiple source files that share the same addresses. In that case one of the source files is shown. If that is the wrong one you can exclude it here.",
+											"default": []
 										}
 									}
 								}
@@ -1440,6 +1554,46 @@
 						}
 					},
 					{
+						"label": "DeZog: TRS-80GP",
+						"description": "Configuration for DeZog to use the TRS-80GP emulator.",
+						"body": {
+							"type": "dezog",
+							"request": "launch",
+							"name": "TRS-80GP",
+							"remoteType": "trs80gp",
+							"trs80": {
+								"port": 49152,
+								"emulator": {
+									"path": "${1:Path to trs80gp executable}",
+									"model": 1,
+									"memorySize": 48,
+									"diskImages": {
+										"drive0": "${2:Path to disk image (optional)}",
+										"drive1": "${3:Path to second disk image (optional)}"
+									},
+									"cassetteImage": "${4:Path to cassette image (optional)}",
+									"symbolsFile": "${5:Path to symbols file (optional)}",
+									"enableSerial": true,
+									"autoStart": true
+								}
+							},
+							"startAutomatically": false,
+							"sjasmplus": [
+								{
+									"path": "${6:Assembler list or sld file}"
+								}
+							],
+							"history": {
+								"reverseDebugInstructionCount": 10000,
+								"spotCount": 5,
+								"codeCoverageEnabled": true
+							},
+							"rootFolder": "^\"\\${workspaceFolder\\}\"",
+							"load": "${7:.cmd file to load}",
+							"topOfStack": "${8:Top of stack / label name}"
+						}
+					},
+					{
 						"label": "DeZog: ZX Next",
 						"description": "Configuration for DeZog to use the ZX Next for remote debugging.",
 						"body": {
@@ -1465,6 +1619,35 @@
 							"rootFolder": "^\"\\${workspaceFolder\\}\"",
 							"load": "${3:.nex or .sna file to load}",
 							"topOfStack": "${4: Top of stack / label name}"
+						}
+					},
+					{
+						"label": "DeZog: Simulator - TRS-80",
+						"description": "Configuration for DeZog to use the internal simulator for TRS-80 development with zmac assembler.",
+						"body": {
+							"type": "dezog",
+							"request": "launch",
+							"name": "Simulator - TRS-80",
+							"remoteType": "zsim",
+							"zsim": {
+								"visualMemory": true,
+								"memoryModel": "RAM"
+							},
+							"zmac": [
+								{
+									"path": "${1:Zmac .bds file}"
+								}
+							],
+							"commandsAfterLaunch": [],
+							"history": {
+								"reverseDebugInstructionCount": 1000000,
+								"spotCount": 10,
+								"codeCoverageEnabled": true
+							},
+							"startAutomatically": false,
+							"rootFolder": "^\"\\${workspaceFolder\\}\"",
+							"load": "${2:.cmd or binary file to load}",
+							"topOfStack": "${3: Top of stack / label name}"
 						}
 					},
 					{

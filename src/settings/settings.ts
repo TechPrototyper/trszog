@@ -66,6 +66,10 @@ export interface Z88dkConfigV2 extends AsmConfigBase {
 	mapFile: string;
 }
 
+// Zmac assembler
+export interface ZmacConfig extends AsmConfigBase {
+	// Note: In zmac the 'path' should point to the .bds file generated with -j option.
+}
 
 
 export interface Formatting {
@@ -159,6 +163,66 @@ export interface ZxNextSerialType {
 	serial: string;	// E.g. "/dev/cu.usbserial-AQ007PCD" on macOS
 	/// The serial timeout in seconds.
 	timeout: number;
+}
+
+
+// Definitions for TRS-80 remote type.
+export interface Trs80Type {
+	// The hostname/IP address of the TRS-80 remote.
+	hostname: string;
+
+	// The port of the TRS-80 remote.
+	port: number;
+
+	/// The socket timeout in seconds.
+	socketTimeout: number;
+
+	// When true, uses the internal mock server instead of connecting to a real TRS-80GP emulator.
+	// This is useful for testing/development without requiring the actual emulator.
+	useMock?: boolean;
+
+	// TRS-80GP emulator launch configuration
+	emulator?: Trs80EmulatorConfig;
+}
+
+// TRS-80GP emulator launch configuration
+export interface Trs80EmulatorConfig {
+	// Path to trs80gp executable
+	path: string;
+
+	// TRS-80 model to emulate (-m option)
+	// 1 = Model I, 3 = Model III, 4 = Model 4
+	model: 1 | 3 | 4;
+
+	// Memory size in KB (-mem option)
+	// Model I: 4, 16, 48
+	// Model III: 16, 48  
+	// Model 4: 64, 128
+	memorySize?: number;
+
+	// Disk images to mount (-d0, -d1 options)
+	diskImages?: {
+		drive0?: string;  // Path to disk image for drive 0
+		drive1?: string;  // Path to disk image for drive 1
+	};
+
+	// Cassette tape image to load (-cas option)
+	cassetteImage?: string;
+
+	// Load symbols file (-ls option)
+	symbolsFile?: string;
+
+	// Enable serial/JSON-RPC interface (-serial option)
+	enableSerial?: boolean;
+
+	// Additional command line arguments
+	additionalArgs?: string[];
+
+	// Working directory for the emulator
+	workingDirectory?: string;
+
+	// Auto-start the emulator when debugging starts
+	autoStart?: boolean;
 }
 
 
@@ -380,7 +444,7 @@ export interface SmartDisassemblerArgs {
  */
 export interface SettingsParameters extends DebugProtocol.LaunchRequestArguments {
 	/// The remote type: zesarux or zxnext.
-	remoteType: 'zrcp' | 'cspect' | 'zxnext' | 'zsim' | 'mame';
+	remoteType: 'zrcp' | 'cspect' | 'zxnext' | 'zsim' | 'mame' | 'trs80';
 
 	// The special settings for zrcp (ZEsarux).
 	zrcp: ZrcpType;
@@ -390,6 +454,9 @@ export interface SettingsParameters extends DebugProtocol.LaunchRequestArguments
 
 	// The special settings for MAME.
 	mame: MameType;
+
+	// The special settings for TRS-80.
+	trs80: Trs80Type;
 
 	// The special settings for the internal Z80 simulator.
 	zsim: ZSimType;
@@ -408,6 +475,7 @@ export interface SettingsParameters extends DebugProtocol.LaunchRequestArguments
 	z80asm: Array<Z80asmConfig>;
 	z88dk: Array<Z88dkConfig>;
 	z88dkv2: Array<Z88dkConfigV2>;
+	zmac: Array<ZmacConfig>;
 	revEng: Array<ReverseEngineeringConfig>;
 
 	/// The paths to the .labels files.
@@ -509,12 +577,14 @@ export class Settings {
 				mame: <any>undefined,
 				zsim: <any>undefined,
 				zxnext: <any>undefined,
+				trs80: <any>undefined,
 				unitTests: <any>undefined,
 				rootFolder: <any>undefined,
 				sjasmplus: <any>undefined,
 				z80asm: <any>undefined,
 				z88dk: <any>undefined,
 				z88dkv2: <any>undefined,
+				zmac: <any>undefined,
 				revEng: <any>undefined,
 				smallValuesMaximum: <any>undefined,
 				disassemblerArgs: <any>undefined,
@@ -591,6 +661,58 @@ export class Settings {
 			launchCfg.mame.port = 12000;
 		if (!launchCfg.mame.socketTimeout)
 			launchCfg.mame.socketTimeout = 5;	// 5 secs
+
+		// trs80
+		if (!launchCfg.trs80)
+			launchCfg.trs80 = {} as Trs80Type;
+		if (launchCfg.trs80.hostname === undefined)
+			launchCfg.trs80.hostname = 'localhost';
+		if (launchCfg.trs80.port === undefined)
+			launchCfg.trs80.port = 49152;  // 49152 = 48K addressable memory (TRS-80 Model I/III), decrement for multiple emulators
+		if (launchCfg.trs80.useMock === undefined)
+			launchCfg.trs80.useMock = false;  // Default to using the real emulator if available
+		if (!launchCfg.trs80.socketTimeout)
+			launchCfg.trs80.socketTimeout = 5;	// 5 secs
+
+		// trs80 emulator config
+		if (launchCfg.trs80.emulator) {
+			// Convert relative paths to absolute paths
+			if (launchCfg.trs80.emulator.path) {
+				const path = UnifiedPath.getUnifiedPath(launchCfg.trs80.emulator.path);
+				launchCfg.trs80.emulator.path = Utility.getAbsFilePath(path, rootFolder);
+			}
+			if (launchCfg.trs80.emulator.diskImages?.drive0) {
+				const path = UnifiedPath.getUnifiedPath(launchCfg.trs80.emulator.diskImages.drive0);
+				launchCfg.trs80.emulator.diskImages.drive0 = Utility.getAbsFilePath(path, rootFolder);
+			}
+			if (launchCfg.trs80.emulator.diskImages?.drive1) {
+				const path = UnifiedPath.getUnifiedPath(launchCfg.trs80.emulator.diskImages.drive1);
+				launchCfg.trs80.emulator.diskImages.drive1 = Utility.getAbsFilePath(path, rootFolder);
+			}
+			if (launchCfg.trs80.emulator.cassetteImage) {
+				const path = UnifiedPath.getUnifiedPath(launchCfg.trs80.emulator.cassetteImage);
+				launchCfg.trs80.emulator.cassetteImage = Utility.getAbsFilePath(path, rootFolder);
+			}
+			if (launchCfg.trs80.emulator.symbolsFile) {
+				const path = UnifiedPath.getUnifiedPath(launchCfg.trs80.emulator.symbolsFile);
+				launchCfg.trs80.emulator.symbolsFile = Utility.getAbsFilePath(path, rootFolder);
+			}
+			if (launchCfg.trs80.emulator.workingDirectory) {
+				const path = UnifiedPath.getUnifiedPath(launchCfg.trs80.emulator.workingDirectory);
+				launchCfg.trs80.emulator.workingDirectory = Utility.getAbsFilePath(path, rootFolder);
+			}
+			// Set default values
+			if (launchCfg.trs80.emulator.model === undefined)
+				launchCfg.trs80.emulator.model = 1;
+			if (launchCfg.trs80.emulator.memorySize === undefined)
+				launchCfg.trs80.emulator.memorySize = 48;  // 48KB default for Model I
+			if (launchCfg.trs80.emulator.enableSerial === undefined)
+				launchCfg.trs80.emulator.enableSerial = true;
+			if (launchCfg.trs80.emulator.autoStart === undefined)
+				launchCfg.trs80.emulator.autoStart = true;
+			if (!launchCfg.trs80.emulator.additionalArgs)
+				launchCfg.trs80.emulator.additionalArgs = [];
+		}
 
 		// zsim
 		if (!launchCfg.zsim)
@@ -945,6 +1067,29 @@ export class Settings {
 			});
 		}
 
+		// zmac
+		if (launchCfg.zmac) {
+			launchCfg.zmac = launchCfg.zmac.map(fp => {
+				// ListFile structure
+				const fpPath = UnifiedPath.getUnifiedPath(fp.path);
+				const fpSrcDirs = UnifiedPath.getUnifiedPathArray(fp.srcDirs);
+				const fpExclFiles = UnifiedPath.getUnifiedPathArray(fp.excludeFiles);
+				const file = {
+					path: undefined as any,
+					srcDirs: fpSrcDirs ?? [""],
+					excludeFiles: fpExclFiles ?? []
+				};
+				if (fpPath) {
+					// Note: path is a glob path
+					const unifiedRootFolder = UnifiedPath.getUnifiedPath(rootFolder);
+					const escapedRootFolder = Utility.escapePathForGlob(unifiedRootFolder);
+					const unifiedFpPath = UnifiedPath.getUnifiedPath(fpPath);
+					file.path = Utility.getAbsFilePathWoUnify(unifiedFpPath, escapedRootFolder)
+				}
+				return file;
+			});
+		}
+
 		// revEng
 		if (launchCfg.revEng) {
 			launchCfg.revEng = launchCfg.revEng.map(fp => {
@@ -1153,6 +1298,8 @@ export class Settings {
 			listFiles.push(...configuration.z88dk);
 		if (configuration.z88dkv2)
 			listFiles.push(...configuration.z88dkv2);
+		if (configuration.zmac)
+			listFiles.push(...configuration.zmac);
 
 		return listFiles;
 	}
