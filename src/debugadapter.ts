@@ -833,11 +833,17 @@ export class DebugSessionClass extends DebugSession {
 
 				// Initialize Remote
 				try {
+					console.log('[DEBUG] Starting Remote.init()...');
+					this.debugConsoleAppendLine('[DEBUG] Starting Remote.init()...');
 					await Remote.init();
+					console.log('[DEBUG] Remote.init() completed successfully');
+					this.debugConsoleAppendLine('[DEBUG] Remote.init() completed successfully');
 				}
 				catch (e) {
 					// Some error occurred
 					const error = e.message || "Error";
+					console.log('[DEBUG] Remote.init() failed:', error);
+					this.debugConsoleAppendLine('[DEBUG] Remote.init() failed: ' + error);
 					await Remote.terminate('Init remote: ' + error);
 					reject(e);
 					DebugSessionClass.singleton().unitTestsStartCallbacks?.reject(e);

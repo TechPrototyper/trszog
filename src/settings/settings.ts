@@ -449,7 +449,7 @@ export interface SmartDisassemblerArgs {
  */
 export interface SettingsParameters extends DebugProtocol.LaunchRequestArguments {
 	/// The remote type: zesarux or zxnext.
-	remoteType: 'zrcp' | 'cspect' | 'zxnext' | 'zsim' | 'mame' | 'trs80';
+	remoteType: 'zrcp' | 'cspect' | 'zxnext' | 'zsim' | 'mame' | 'trs80' | 'trs80gp';
 
 	// The special settings for zrcp (ZEsarux).
 	zrcp: ZrcpType;
@@ -1327,7 +1327,7 @@ export class Settings {
 
 		// Check remote type
 		const rType = Settings.launch.remoteType;
-		const allowedTypes = ['zrcp', 'cspect', 'zxnext', 'zsim', 'mame'];
+		const allowedTypes = ['zrcp', 'cspect', 'zxnext', 'zsim', 'mame', 'trs80gp'];
 		const found = (allowedTypes.indexOf(rType) >= 0);
 		if (!found) {
 			throw Error("'remoteType': Remote type '" + rType + "' does not exist. Allowed are " + allowedTypes.join(', ') + ".");

@@ -93,25 +93,41 @@ export class Trs80Remote extends RemoteBase {
      * Launches emulator or mock server if configured, then initializes the connection.
      */
     public async init(): Promise<void> {
+        console.log('Trs80Remote.init() - Starting TRS-80 remote initialization');
+        LogTransport.log('TRS-80: Starting remote initialization');
+        
         try {
             // Launch real emulator if configured
             if (!this.useMockServer && this.emulatorLauncher) {
+                console.log('Trs80Remote.init() - Launching real emulator');
                 LogTransport.log('TRS-80: Launching emulator...');
                 await this.emulatorLauncher.launchEmulator();
+                console.log('Trs80Remote.init() - Emulator launched successfully');
+                LogTransport.log('TRS-80: Emulator launched successfully');
             }
             // Or launch mock server if configured
             else if (this.useMockServer && this.mockServerLauncher) {
+                console.log('Trs80Remote.init() - Starting mock server');
                 LogTransport.log('TRS-80: Starting mock server...');
                 await this.mockServerLauncher.start();
+                console.log(`Trs80Remote.init() - Mock server started on port ${this.mockServerLauncher.getPort()}`);
                 LogTransport.log(`TRS-80: Mock server started on port ${this.mockServerLauncher.getPort()}`);
             }
             
             // Wait a moment for the server/emulator to be ready
+            console.log('Trs80Remote.init() - Waiting 2 seconds for server/emulator to be ready');
+            LogTransport.log('TRS-80: Waiting for server/emulator to be ready...');
             await new Promise(resolve => setTimeout(resolve, 2000));
             
             // Initialize the model-specific remote
+            console.log('Trs80Remote.init() - Initializing model-specific remote');
+            LogTransport.log('TRS-80: Initializing model-specific remote');
             await this.modelRemote.init();
+            
+            console.log('Trs80Remote.init() - TRS-80 remote initialization completed successfully');
+            LogTransport.log('TRS-80: Remote initialization completed successfully');
         } catch (error) {
+            console.log(`Trs80Remote.init() - Failed to initialize: ${error.message}`);
             LogTransport.log(`TRS-80: Failed to initialize - ${error.message}`);
             throw error;
         }
