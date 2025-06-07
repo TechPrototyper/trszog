@@ -30,7 +30,7 @@ export class Trs80EmulatorLauncher {
      * @returns Promise that resolves when the emulator is ready for connection
      */
     public async launchEmulator(): Promise<void> {
-        const emulatorConfig = Settings.launch.trs80.emulator;
+        const emulatorConfig = Settings.launch.trs80?.emulator;
         
         // Check for auto-start disabled
         if (!emulatorConfig || !emulatorConfig.autoStart) {
@@ -45,7 +45,7 @@ export class Trs80EmulatorLauncher {
      * Launch the real trs80gp emulator
      */
     private async launchRealEmulator(): Promise<void> {
-        const emulatorConfig = Settings.launch.trs80.emulator;
+        const emulatorConfig = Settings.launch.trs80?.emulator;
         
         if (!emulatorConfig || !emulatorConfig.path) {
             throw new Error('trs80gp emulator path not configured');
@@ -165,7 +165,7 @@ export class Trs80EmulatorLauncher {
             args.push('-serial');
             
             // Add port if specified in TRS-80 configuration
-            const port = Settings.launch.trs80.port;
+            const port = Settings.launch.trs80?.port;
             if (port) {
                 args.push('-port', port.toString());
             }

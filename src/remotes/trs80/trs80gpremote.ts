@@ -4,6 +4,8 @@ import {DzrpMachineType} from '../dzrp/dzrpremote';
 import {Socket} from 'net';
 import {PortManager} from './portmanager';
 import {Z80RegistersStandardDecoder} from '../z80registersstandarddecoder';
+import {Z80Registers} from '../z80registers';
+import {MemoryModelTrs80Model1, MemoryModelTrs80Model3} from '../MemoryModel/trs80memorymodels';
 
 /**
  * JSON-RPC message interface for communication with trs80gp emulator.
@@ -186,11 +188,11 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      * Connect to trs80gp emulator with intelligent port allocation.
      */
     public async connectSocket(): Promise<void> {
-        const hostname = Settings.launch.trs80.hostname || 'localhost';
+        const hostname = Settings.launch.trs80?.hostname || 'localhost';
         
         // Use configured port if available, otherwise find an available port
         let port: number;
-        const configuredPort = Settings.launch.trs80.port;
+        const configuredPort = Settings.launch.trs80?.port;
         
         if (configuredPort) {
             // Check if the configured port is available
@@ -283,6 +285,16 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
                 throw new Error(result.error);
             }
 
+            // Initialize the Z80 registers decoder for TRS-80
+            console.log('[TRS80GP] Initializing Z80 registers decoder');
+            Z80Registers.decoder = this.createZ80RegistersDecoder();
+            this.emit('debug_console', 'Z80 registers decoder initialized for TRS-80');
+
+            // Initialize the memory model based on machine type
+            console.log('[TRS80GP] Initializing memory model for machine type:', result.machineType);
+            this.createAndInitializeMemoryModel(result.machineType);
+            this.emit('debug_console', 'Memory model initialized for TRS-80');
+
             // Emit 'initialized' event which the system is waiting for
             const message = `${result.programName} initialized`;
             console.log(`[TRS80GP] Emitting 'initialized' event with message: ${message}`);
@@ -302,6 +314,35 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
     protected createZ80RegistersDecoder(): any {
         // Return the standard decoder for TRS-80
         return new Z80RegistersStandardDecoder();
+    }
+
+    /**
+     * Create and initialize the appropriate memory model based on machine type.
+     */
+    protected createAndInitializeMemoryModel(machineType: DzrpMachineType): void {
+        console.log(`[TRS80GP] Creating memory model for machine type: ${machineType}`);
+        
+        // Create the appropriate memory model based on machine type
+        switch (machineType) {
+            case DzrpMachineType.TRS80_MODEL1:
+                this.memoryModel = new MemoryModelTrs80Model1();
+                console.log('[TRS80GP] Created MemoryModelTrs80Model1');
+                break;
+            case DzrpMachineType.TRS80_MODEL3:
+                this.memoryModel = new MemoryModelTrs80Model3();
+                console.log('[TRS80GP] Created MemoryModelTrs80Model3');
+                break;
+            default:
+                // Default to Model 1 for unknown types
+                console.log(`[TRS80GP] Unknown machine type ${machineType}, defaulting to Model 1`);
+                this.memoryModel = new MemoryModelTrs80Model1();
+                break;
+        }
+        
+        // Initialize the memory model - this sets up funcCreateLongAddress and funcGetSlotFromAddress
+        console.log('[TRS80GP] Calling memoryModel.init()');
+        this.memoryModel.init();
+        console.log('[TRS80GP] Memory model initialization completed');
     }
 
     // Add DzrpMachineType reference for convenience
@@ -356,15 +397,23 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      */
     public async sendDzrpCmdGetRegisters(): Promise<Uint16Array> {
         try {
+            console.log('TRS-80 GP: sendDzrpCmdGetRegisters() calling sendTrs80GpJsonRpcRequest');
             const result = await this.sendTrs80GpJsonRpcRequest('getRegisters');
+            console.log('TRS-80 GP: Got raw result from getRegisters:', JSON.stringify(result));
             
             if (result) {
+                console.log('TRS-80 GP: Converting registers to DeZog format...');
                 const regData = this.convertTrs80GpRegistersToDeZog(result);
+                console.log('TRS-80 GP: Converted regData:', regData);
+                console.log('TRS-80 GP: regData type:', typeof regData, 'length:', regData?.length);
+                
                 this.emitTrs80GpRegisterData(result);
                 return regData;
             }
+            console.log('TRS-80 GP: No result, returning empty Uint16Array');
             return new Uint16Array(20);
         } catch (err) {
+            console.error('TRS-80 GP: sendDzrpCmdGetRegisters() error:', err);
             throw new Error(`Failed to get registers from trs80gp: ${err.message}`);
         }
     }
@@ -388,7 +437,7 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
         }
 
         // Get the register format from configuration
-        const registerFormat = Settings.launch.trs80.registerFormat || 'hex';
+        const registerFormat = Settings.launch.trs80?.registerFormat || 'hex';
         
         // Parse register values based on the configured format
         const parseRegisterValue = (value: any): number => {

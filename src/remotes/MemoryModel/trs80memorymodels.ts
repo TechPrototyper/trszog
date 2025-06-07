@@ -1,4 +1,5 @@
 import {MemoryModel} from "./memorymodel";
+import {Z80Registers} from "../z80registers";
 
 
 /** Contains the predefined memory models for TRS-80 computers.
@@ -8,6 +9,23 @@ import {MemoryModel} from "./memorymodel";
 /** TRS-80 base definition.
  */
 export class MemoryModelTrs80Base extends MemoryModel {
+	
+	/** Initialize the TRS-80 memory model with long address functions.
+	 */
+	public init() {
+		Z80Registers.setSlotsAndBanks(
+			// Calculate long address
+			(addr64k: number, slots: number[]) => {
+				const slotIndex = this.slotAddress64kAssociation[addr64k];
+				const bank = slots[slotIndex] + 1;
+				return addr64k + (bank << 16);
+			},
+			// Returns slot index from address
+			(addr64k: number) => {
+				return this.slotAddress64kAssociation[addr64k];
+			}
+		);
+	}
 }
 
 

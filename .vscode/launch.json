@@ -18,6 +18,51 @@
 			"skipFiles": [
 				"**/extensionHostProcess.js"
 			]
+		},
+		{
+			"type": "dezog",
+			"request": "launch",
+			"name": "TRS-80 Model 1 (Mock)",
+			"remoteType": "trs80gp",
+			"trs80": {
+				"hostname": "localhost",
+				"port": 49152,
+				"useMock": true,
+				"registerFormat": "hex"
+			},
+			"sjasmplus": [
+				{
+					"path": "${workspaceFolder}/test-trs80/test-program.sld"
+				}
+			],
+			"startAutomatically": false,
+			"rootFolder": "${workspaceFolder}",
+			"topOfStack": 65535,
+			"load": "${workspaceFolder}/test-trs80/test-program.cmd"
+		},
+		{
+			"type": "dezog",
+			"request": "launch",
+			"name": "TRS-80 Model 3 (Mock)",
+			"remoteType": "trs80gp",
+			"trs80": {
+				"hostname": "localhost",
+				"port": 49153,
+				"useMock": true,
+				"registerFormat": "hex",
+				"emulator": {
+					"model": 3
+				}
+			},
+			"sjasmplus": [
+				{
+					"path": "${workspaceFolder}/test-trs80/test-program.sld"
+				}
+			],
+			"startAutomatically": false,
+			"rootFolder": "${workspaceFolder}",
+			"topOfStack": 65535,
+			"load": "${workspaceFolder}/test-trs80/test-program.cmd"
 		}
 	]
 }
