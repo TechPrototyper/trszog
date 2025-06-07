@@ -701,6 +701,16 @@ export class LabelParserBase {
 	 * Overwrite for parsers (assemblers) that support banking.
 	 */
 	protected checkMappingToTargetMemoryModel() {
+		// Check if we have a valid memory model with banking support
+		if (!this.memoryModel || !this.memoryModel.slotAddress64kAssociation || !this.memoryModel.initialSlots) {
+			// For simple memory models (like TRS-80) that don't have complex banking,
+			// just use a simple conversion function that returns bank 0
+			this.funcConvertBank = (address: number, _bank: number) => {
+				return 0; // Default to bank 0 for simple memory models
+			};
+			return;
+		}
+
 		const slotAddress64kAssociation = this.memoryModel.slotAddress64kAssociation;
 		const initialSlots = this.memoryModel.initialSlots;
 
