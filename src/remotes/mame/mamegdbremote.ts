@@ -52,68 +52,87 @@ export class MameGdbRemote extends DzrpQueuedRemote {
 	 * by 'doInitialization' after a successful connect.
 	 */
 	public async doInitialization(): Promise<void> {
+		console.log('MameGdbRemote.doInitialization() started');
+		LogTransport.log('MameGdbRemote: Starting initialization');
 
-		// Init socket
-		this.socket = new Socket();
-		this.socket.unref();
-		this.cmdRespTimeoutTime = Settings.launch.mame.socketTimeout * 1000;
+		try {
+			// Init socket
+			console.log('MameGdbRemote: Creating socket connection');
+			LogTransport.log('MameGdbRemote: Creating socket connection to ' + Settings.launch.mame.hostname + ':' + Settings.launch.mame.port);
+			this.socket = new Socket();
+			this.socket.unref();
+			this.cmdRespTimeoutTime = Settings.launch.mame.socketTimeout * 1000;
 
-		// React on-open
-		this.socket.on('connect', () => {
-			(async () => {
-				LogTransport.log('MameRemote: Connected to server!');
+			// React on-open
+			this.socket.on('connect', () => {
+				(async () => {
+					console.log('MameGdbRemote: Socket connected successfully');
+					LogTransport.log('MameRemote: Connected to server!');
 
-				this.receivedData = '';
+					this.receivedData = '';
 
-				// Check for unsupported settings
-				if (Settings.launch.history.codeCoverageEnabled) {
-					this.emit('warning', "launch.json: codeCoverageEnabled==true: MAME gdb does not support code coverage.");
+					// Check for unsupported settings
+					if (Settings.launch.history.codeCoverageEnabled) {
+						this.emit('warning', "launch.json: codeCoverageEnabled==true: MAME gdb does not support code coverage.");
+					}
+
+					await this.onConnect();
+				})();
+			});
+
+			// Handle disconnect
+			this.socket.on('close', hadError => {
+				//console.log('Close.');
+				console.log('MameGdbRemote: Socket connection closed, hadError:', hadError);
+				LogTransport.log('MameRemote: MAME terminated the connection: ' + hadError);
+				// Error
+				const err = new Error('MameRemote: MAME terminated the connection!');
+				try {
+					this.emit('error', err);
 				}
+				catch {};
+			});
 
-				await this.onConnect();
-			})();
-		});
+			// Handle errors
+			this.socket.on('error', err => {
+				ErrorWrapper.wrap(err);
+				//console.log('Error: ', err);
+				console.log('MameGdbRemote: Socket error:', err.message);
+				LogTransport.log('MameRemote: Error: ' + err);
+				// Error
+				try {
+					this.emit('error', err);
+				}
+				catch {};
+			});
 
-		// Handle disconnect
-		this.socket.on('close', hadError => {
-			//console.log('Close.');
-			LogTransport.log('MameRemote: MAME terminated the connection: ' + hadError);
-			// Error
-			const err = new Error('MameRemote: MAME terminated the connection!');
-			try {
-				this.emit('error', err);
-			}
-			catch {};
-		});
+			// Receive data
+			this.socket.on('data', data => {
+				this.dataReceived(data.toString());
+			});
 
-		// Handle errors
-		this.socket.on('error', err => {
-			ErrorWrapper.wrap(err);
-			//console.log('Error: ', err);
-			LogTransport.log('MameRemote: Error: ' + err);
-			// Error
-			try {
-				this.emit('error', err);
-			}
-			catch {};
-		});
-
-		// Receive data
-		this.socket.on('data', data => {
-			this.dataReceived(data.toString());
-		});
-
-		// Start socket connection
-		this.socket.setTimeout(CONNECTION_TIMEOUT);
-		const port = Settings.launch.mame.port;
-		const hostname = Settings.launch.mame.hostname;
-		this.socket.connect(port, hostname);
+			// Start socket connection
+			console.log('MameGdbRemote: Initiating socket connection with timeout', CONNECTION_TIMEOUT + 'ms');
+			LogTransport.log('MameGdbRemote: Starting socket connection to ' + Settings.launch.mame.hostname + ':' + Settings.launch.mame.port);
+			this.socket.setTimeout(CONNECTION_TIMEOUT);
+			const port = Settings.launch.mame.port;
+			const hostname = Settings.launch.mame.hostname;
+			this.socket.connect(port, hostname);
+			console.log('MameGdbRemote.doInitialization() completed setup');
+		}
+		catch (err) {
+			console.log('MameGdbRemote.doInitialization() error:', err);
+			LogTransport.log('MameGdbRemote: doInitialization error: ' + err);
+			this.emit('error', err);
+		}
 	}
 
 
 	/** Override to create another decoder.
 	 */
 	protected createZ80RegistersDecoder(): Z80RegistersStandardDecoder {
+		console.log('MameGdbRemote: Creating Z80RegistersMameDecoder');
+		LogTransport.log('MameGdbRemote: Creating MAME-specific Z80 registers decoder');
 		return new Z80RegistersMameDecoder();
 	}
 
@@ -123,28 +142,49 @@ export class MameGdbRemote extends DzrpQueuedRemote {
 	 * @emits this.emit('initialized') or this.emit('error', Error(...))
 	 */
 	protected async onConnect(): Promise<void> {
+		console.log('MameGdbRemote.onConnect() started');
+		LogTransport.log('MameGdbRemote: Starting onConnect initialization sequence');
+		
 		try {
 			// Init
+			console.log('MameGdbRemote: Sending XML feature request to enable register commands');
+			LogTransport.log('MameGdbRemote: Requesting XML features from MAME');
 			//const qReply =
 			//await this.sendPacketData('?'); // Reply is ignored
 			const qXmlReply = await this.sendPacketData('qXfer:features:read:target.xml:00,FFFF');	// Enable 'g', 'G', 'p', and 'P commands
+			console.log('MameGdbRemote: Received XML reply, length:', qXmlReply.length);
 
 			// Check the XML
+			console.log('MameGdbRemote: Parsing and validating XML architecture');
+			LogTransport.log('MameGdbRemote: Parsing XML to validate Z80 architecture');
 			this.parseXml(qXmlReply);
+			console.log('MameGdbRemote: XML validation successful - confirmed Z80 architecture');
 
 			// Load executable
+			console.log('MameGdbRemote: Loading executable/program files');
+			LogTransport.log('MameGdbRemote: Starting load process');
 			await this.load();
+			console.log('MameGdbRemote: Load process completed');
 
+			console.log('MameGdbRemote: Creating Z80 registers decoder');
+			LogTransport.log('MameGdbRemote: Setting up Z80 registers decoder');
 			Z80Registers.decoder = this.createZ80RegistersDecoder();
 
 			// 64k ROM
+			console.log('MameGdbRemote: Initializing memory model (64k Unknown)');
+			LogTransport.log('MameGdbRemote: Creating and initializing memory model');
 			this.memoryModel = new MemoryModelUnknown()
 			this.memoryModel.init();
+			console.log('MameGdbRemote: Memory model initialization completed');
 
 			// Ready
+			console.log('MameGdbRemote.onConnect() completed successfully');
+			LogTransport.log('MameGdbRemote: Initialization sequence completed successfully');
 			this.emit('initialized', 'MAME connected!')
 		}
 		catch (err) {
+			console.log('MameGdbRemote.onConnect() error:', err);
+			LogTransport.log('MameGdbRemote: onConnect error: ' + err);
 			try {
 				this.emit('error', err);
 			}
@@ -233,13 +273,29 @@ export class MameGdbRemote extends DzrpQueuedRemote {
 	 * Throws an exception if the architecture is not 'z80'.
 	 */
 	protected parseXml(xml: string) {
+		console.log('MameGdbRemote.parseXml() - validating architecture');
+		LogTransport.log('MameGdbRemote: Parsing XML response, length: ' + xml.length);
+		
 		// Check <architecture>z80</architecture>
 		const match = /<architecture>(.*)<\/architecture>/.exec(xml);
-		if (!match)
+		if (!match) {
+			console.log('MameGdbRemote.parseXml() - No architecture found in XML');
+			LogTransport.log('MameGdbRemote: No architecture tag found in XML response');
 			throw Error("No architecture found in reply of MAME.");
+		}
+		
 		const architecture = match[1];
-		if (architecture != 'z80')
+		console.log('MameGdbRemote.parseXml() - Found architecture:', architecture);
+		LogTransport.log('MameGdbRemote: Found architecture: ' + architecture);
+		
+		if (architecture != 'z80') {
+			console.log('MameGdbRemote.parseXml() - Unsupported architecture:', architecture);
+			LogTransport.log('MameGdbRemote: Unsupported architecture: ' + architecture);
 			throw Error("Architecture '" + architecture + "' is not supported by DeZog. Please select a driver/ROM in MAME with a 'z80' architecture.");
+		}
+		
+		console.log('MameGdbRemote.parseXml() - Architecture validation successful');
+		LogTransport.log('MameGdbRemote: Architecture validation successful (z80)');
 	}
 
 
@@ -465,11 +521,21 @@ export class MameGdbRemote extends DzrpQueuedRemote {
 	 * @param packetData E.g. 'z1,C000,0'
 	 */
 	protected async sendPacketDataOk(packetData: string): Promise<void> {
+		console.log('MameGdbRemote: Sending packet expecting OK:', packetData);
+		LogTransport.log('MameGdbRemote: Sending packet (expecting OK): ' + packetData);
+		
 		// Send
 		const reply = await this.sendPacketData(packetData);
+		console.log('MameGdbRemote: Received reply for OK packet:', reply);
+		
 		// Check reply for 'OK'
-		if (reply != 'OK')
+		if (reply != 'OK') {
+			console.log('MameGdbRemote: ERROR - Expected OK but got:', reply);
+			LogTransport.log('MameGdbRemote: ERROR - Expected OK but received: ' + reply);
 			throw Error("Communication error: MAME replied with an Error: '" + reply + "'");
+		}
+		
+		console.log('MameGdbRemote: Packet successfully processed with OK');
 	}
 
 
