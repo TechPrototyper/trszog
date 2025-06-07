@@ -29,7 +29,18 @@ export class Trs80MockServerLauncher {
             // Fall back to extension path as a last resort
             const extensionPath = Utility.getExtensionPath();
             if (extensionPath) {
-                this.mockServerPath = path.join(extensionPath, 'out', 'src', 'remotes', 'trs80', 'mock-server');
+                // First try the out directory (for compiled source)
+                const extensionOutPath = path.join(extensionPath, 'out', 'src', 'remotes', 'trs80', 'mock-server');
+                // Then try the src directory (for packaged source)
+                const extensionSrcPath = path.join(extensionPath, 'src', 'remotes', 'trs80', 'mock-server');
+                
+                if (fs.existsSync(extensionOutPath)) {
+                    this.mockServerPath = extensionOutPath;
+                } else if (fs.existsSync(extensionSrcPath)) {
+                    this.mockServerPath = extensionSrcPath;
+                } else {
+                    this.mockServerPath = extensionOutPath; // Default fallback
+                }
             } else {
                 // For testing without extension context, use source directory
                 this.mockServerPath = path.join(basePath, 'src', 'remotes', 'trs80', 'mock-server');
@@ -73,9 +84,10 @@ export class Trs80MockServerLauncher {
                 const output = data.toString();
                 console.log(`[TRS-80GP Mock] ${output.trim()}`);
                 
-                // Check if server is ready
-                if (output.includes('Mock TRS-80GP server listening') && !serverReady) {
+                // Check if server is ready - look for the listening message
+                if (output.includes('listening on port') && !serverReady) {
                     serverReady = true;
+                    console.log('[TRS-80GP Mock] Server startup detected, resolving...');
                     resolve();
                 }
             });
@@ -89,6 +101,7 @@ export class Trs80MockServerLauncher {
             // Handle process exit
             this.mockServerProcess.on('exit', (code: number | null) => {
                 if (!serverReady) {
+                    console.error(`[TRS-80GP Mock] Process exited before server was ready (exit code: ${code})`);
                     reject(new Error(`TRS-80GP mock server failed to start (exit code: ${code})`));
                 } else {
                     console.log(`[TRS-80GP Mock] Server stopped (exit code: ${code})`);
@@ -108,10 +121,11 @@ export class Trs80MockServerLauncher {
             // Set a timeout for server startup
             setTimeout(() => {
                 if (!serverReady) {
+                    console.error('[TRS-80GP Mock] Server startup timeout');
                     this.stop();
                     reject(new Error('TRS-80GP mock server startup timeout'));
                 }
-            }, 10000); // 10 second timeout
+            }, 15000); // Increased to 15 second timeout
         });
     }
 

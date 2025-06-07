@@ -1,11 +1,11 @@
 {
 	"name": "dezog",
-	"displayName": "DeZog",
-	"version": "3.6.3-rc2",
-	"publisher": "maziac",
-	"description": "Visual Studio Code Debugger for the Z80 and ZX Spectrum/ZX81.",
+	"displayName": "DeZog - Development Edition",
+	"version": "3.6.3-dev-trs80",
+	"publisher": "TechPrototyper",
+	"description": "Visual Studio Code Debugger for the Z80 and ZX Spectrum/ZX81. Development build with TRS-80 register format configuration and mock server.",
 	"author": {
-		"name": "Thomas Busse"
+		"name": "Tim Walter"
 	},
 	"license": "MIT",
 	"keywords": [
@@ -27,7 +27,7 @@
 	"private": true,
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/maziac/DeZog"
+		"url": "https://github.com/TechPrototyper/trszog"
 	},
 	"sponsor": {
 		"url": "https://github.com/sponsors/maziac"

@@ -221,13 +221,19 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      * by 'doInitialization' after a successful connect.
      */
     public async doInitialization(): Promise<void> {
+        console.log('Trs80GpRemote.doInitialization() - Starting TRS-80GP remote initialization');
         try {
             // Connect to TRS-80GP emulator
+            console.log('Trs80GpRemote.doInitialization() - Attempting to connect socket');
             await this.connectSocket();
+            console.log('Trs80GpRemote.doInitialization() - Socket connected successfully');
             
             // Call onConnect to complete the initialization
+            console.log('Trs80GpRemote.doInitialization() - Calling onConnect');
             await this.onConnect();
+            console.log('Trs80GpRemote.doInitialization() - onConnect completed successfully');
         } catch (error) {
+            console.log(`Trs80GpRemote.doInitialization() - Error during initialization: ${error.message}`);
             this.emit('error', error);
         }
     }

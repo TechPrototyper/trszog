@@ -158,8 +158,10 @@ export class RemoteBase extends EventEmitter {
 	/// Don't override this, override 'doInitialization' instead.
 	/// Take care to implement the emits otherwise the system will hang on a start.
 	public async init(): Promise<void> {
+		console.log('[DEBUG] RemoteBase.init() starting doInitialization()...');
 		// Call custom initialization
 		await this.doInitialization();
+		console.log('[DEBUG] RemoteBase.init() doInitialization() completed');
 	}
 
 
