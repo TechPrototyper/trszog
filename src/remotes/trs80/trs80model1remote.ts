@@ -1,5 +1,6 @@
 import {Trs80GpRemote} from './trs80gpremote';
 import {DzrpMachineType} from '../dzrp/dzrpremote';
+import {Z80Registers} from '../z80registers';
 
 /**
  * TRS-80 Model 1 Remote implementation.
@@ -21,7 +22,8 @@ export class Trs80Model1Remote extends Trs80GpRemote {
     }
 
     /**
-     * Initialize connection with Model 1 specific parameters.
+     * Initializes the connection to the TRS-80 Model 1.
+     * Sends the initial configuration and retrieves the program name and version.
      */
     public async sendDzrpCmdInit(): Promise<{error: string | undefined; programName: string; dzrpVersion: string; machineType: DzrpMachineType}> {
         try {
@@ -135,6 +137,28 @@ export class Trs80Model1Remote extends Trs80GpRemote {
                 break;
             default:
                 super.handleTrs80GpNotification(method, params);
+        }
+    }
+
+    /**
+     * Retrieves the registers from the emulator and caches them.
+     * This is required by the base RemoteBase class.
+     */
+    public async getRegistersFromEmulator(): Promise<void> {
+        try {
+            console.log('TRS-80 Model 1: getRegistersFromEmulator() called');
+            
+            // Get register data from emulator
+            const regData = await this.sendDzrpCmdGetRegisters();
+            console.log('TRS-80 Model 1: sendDzrpCmdGetRegisters() returned:', regData);
+            console.log('TRS-80 Model 1: regData type:', typeof regData, 'length:', regData?.length);
+            
+            // Cache the register data using Z80Registers
+            Z80Registers.setCache(regData);
+            console.log('TRS-80 Model 1: Z80Registers.setCache() completed');
+        } catch (err) {
+            console.error('TRS-80 Model 1: getRegistersFromEmulator() error:', err);
+            throw new Error(`Failed to get registers from TRS-80 Model 1 emulator: ${err.message}`);
         }
     }
 }

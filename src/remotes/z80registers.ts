@@ -77,7 +77,7 @@ export class Z80RegistersClass {
 	 * Called during the launchRequest to create the singleton.
 	 */
 	public static createRegisters(launchArguments: SettingsParameters) {
-		Z80Registers = new Z80RegistersClass();
+		_Z80Registers = new Z80RegistersClass();
 		// Init the registers
 		Z80RegistersClass.Init(launchArguments);  // Needs to be done here to honor the formatting in the Settings.
 	}
@@ -497,4 +497,23 @@ export class Z80RegistersClass {
 }
 
 
-export let Z80Registers: Z80RegistersClass;
+// Export a getter function instead of a let variable to solve module loading issues
+let _Z80Registers: Z80RegistersClass;
+
+export function getZ80Registers(): Z80RegistersClass {
+	if (!_Z80Registers) {
+		throw new Error('Z80Registers not initialized. Call Z80RegistersClass.createRegisters() first.');
+	}
+	return _Z80Registers;
+}
+
+// Keep the old export pattern for backward compatibility, but use a getter
+export const Z80Registers = new Proxy({} as Z80RegistersClass, {
+	get(target, prop) {
+		return getZ80Registers()[prop as keyof Z80RegistersClass];
+	},
+	set(target, prop, value) {
+		(getZ80Registers() as any)[prop] = value;
+		return true;
+	}
+});

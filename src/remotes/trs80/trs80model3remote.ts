@@ -1,5 +1,6 @@
 import {Trs80GpRemote} from './trs80gpremote';
 import {DzrpMachineType} from '../dzrp/dzrpremote';
+import {Z80Registers} from '../z80registers';
 
 /**
  * TRS-80 Model 3 Remote class that communicates with trs80gp emulator.
@@ -28,6 +29,22 @@ export class Trs80Model3Remote extends Trs80GpRemote {
      */
     constructor() {
         super();
+    }
+
+    /**
+     * Retrieve the register values from the TRS-80 Model 3 emulator and cache them.
+     * This method is called by the debugger to get the current state of the Z80 registers.
+     */
+    public async getRegistersFromEmulator(): Promise<void> {
+        try {
+            // Get register data from the TRS-80 GP emulator
+            const regData = await this.sendDzrpCmdGetRegisters();
+            
+            // Cache the register data using Z80Registers
+            Z80Registers.setCache(regData);
+        } catch (err) {
+            throw new Error(`TRS-80 Model 3: Failed to get registers from emulator: ${err.message || err}`);
+        }
     }
 
     /**

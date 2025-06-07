@@ -1622,20 +1622,16 @@
 						}
 					},
 					{
-						"label": "DeZog: TRS-80 Mock Server",
-						"description": "Configuration for DeZog to use the TRS-80 mock server for development without requiring the real emulator.",
+						"label": "DeZog: Simulator - TRS-80",
+						"description": "Configuration for DeZog to use the internal simulator for TRS-80 development with zmac assembler.",
 						"body": {
 							"type": "dezog",
 							"request": "launch",
-							"name": "TRS-80 Mock Server",
-							"remoteType": "trs80gp",
-							"trs80": {
-								"port": 49152,
-								"useMock": true,
-								"emulator": {
-									"model": 1,
-									"memorySize": 48
-								}
+							"name": "Simulator - TRS-80",
+							"remoteType": "zsim",
+							"zsim": {
+								"visualMemory": true,
+								"memoryModel": "RAM"
 							},
 							"zmac": [
 								{

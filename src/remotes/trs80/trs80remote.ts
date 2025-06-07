@@ -26,7 +26,7 @@ export class Trs80Remote extends RemoteBase {
         super();
         
         // Determine which model implementation to use based on configuration
-        const model = Settings.launch.trs80.emulator?.model || 1;
+        const model = Settings.launch.trs80?.emulator?.model || 1;
         
         switch (model) {
             case 1:
@@ -60,7 +60,7 @@ export class Trs80Remote extends RemoteBase {
         
         // Set up the appropriate launcher
         if (this.useMockServer) {
-            this.mockServerLauncher = new Trs80MockServerLauncher(Settings.launch.trs80.port);
+            this.mockServerLauncher = new Trs80MockServerLauncher(Settings.launch.trs80?.port || 49152);
         } else {
             this.emulatorLauncher = new Trs80EmulatorLauncher();
         }
@@ -71,13 +71,13 @@ export class Trs80Remote extends RemoteBase {
      */
     private shouldUseMockServer(): boolean {
         // Use mock if explicitly configured in settings
-        if (Settings.launch.trs80.useMock === true) {
+        if (Settings.launch.trs80?.useMock === true) {
             LogTransport.log('TRS-80: Using mock server (explicitly configured)');
             return true;
         }
         
         // If no emulator path provided or it doesn't exist, use mock
-        const emulatorConfig = Settings.launch.trs80.emulator;
+        const emulatorConfig = Settings.launch.trs80?.emulator;
         if (!emulatorConfig || !emulatorConfig.path) {
             LogTransport.log('TRS-80: Using mock server (no emulator path provided)');
             return true;
@@ -177,6 +177,7 @@ export class Trs80Remote extends RemoteBase {
 
     // Delegate all DZRP methods to the model-specific remote
     public async sendDzrpCmdInit() { return this.modelRemote.sendDzrpCmdInit(); }
+    public async getRegistersFromEmulator() { return this.modelRemote.getRegistersFromEmulator(); }
     public async sendDzrpCmdGetRegisters() { return this.modelRemote.sendDzrpCmdGetRegisters(); }
     public async sendDzrpCmdSetRegister(regIndex: number, value: number) { return this.modelRemote.sendDzrpCmdSetRegister(regIndex, value); }
     public async sendDzrpCmdWriteMem(address: number, data: Uint8Array) { return this.modelRemote.sendDzrpCmdWriteMem(address, data); }
