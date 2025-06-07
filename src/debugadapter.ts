@@ -441,6 +441,9 @@ export class DebugSessionClass extends DebugSession {
 	 * Respond with supported features.
 	 */
 	protected async initializeRequest(response: DebugProtocol.InitializeResponse, _args: DebugProtocol.InitializeRequestArguments): Promise<void> {
+		console.log('[DEBUG] DebugSessionClass.initializeRequest() started');
+		Log.log('[DEBUG] DebugSessionClass.initializeRequest() started');
+		
 		// Stop any running program.
 		Run.terminate();
 
@@ -510,8 +513,12 @@ export class DebugSessionClass extends DebugSession {
 			}));
 		}
 
+		console.log('[DEBUG] DebugSessionClass.initializeRequest() sending response');
+		Log.log('[DEBUG] DebugSessionClass.initializeRequest() sending response');
 		this.sendResponse(response);
 
+		console.log('[DEBUG] DebugSessionClass.initializeRequest() completed');
+		Log.log('[DEBUG] DebugSessionClass.initializeRequest() completed');
 		// Note: The InitializedEvent will be send when the socket connection has been successful. Afterwards the breakpoints are set.
 	}
 
@@ -542,6 +549,9 @@ export class DebugSessionClass extends DebugSession {
 	 * @param args
 	 */
 	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: SettingsParameters) {
+		console.log('[DEBUG] DebugSessionClass.launchRequest() started');
+		Log.log('[DEBUG] DebugSessionClass.launchRequest() started');
+		
 		try {
 			//console.log('launchRequest');
 			this.running = true;
@@ -585,10 +595,17 @@ export class DebugSessionClass extends DebugSession {
 			this.debugConsoleSavedText = '';
 
 			// Launch emulator
+			console.log('[DEBUG] DebugSessionClass.launchRequest() calling this.launch()');
+			Log.log('[DEBUG] DebugSessionClass.launchRequest() calling this.launch()');
 			await this.launch(response);
+			
+			console.log('[DEBUG] DebugSessionClass.launchRequest() completed successfully');
+			Log.log('[DEBUG] DebugSessionClass.launchRequest() completed successfully');
 		}
 		catch (e) {
 			// Some error occurred
+			console.log('[DEBUG] DebugSessionClass.launchRequest() error:', e.message);
+			Log.log('[DEBUG] DebugSessionClass.launchRequest() error: ' + e.message);
 			response.success = false;
 			response.message = e.message;
 			this.sendResponse(response);
@@ -601,6 +618,9 @@ export class DebugSessionClass extends DebugSession {
 	 * @param response
 	 */
 	protected async launch(response: DebugProtocol.Response) {
+		console.log('[DEBUG] DebugSessionClass.launch() started');
+		Log.log('[DEBUG] DebugSessionClass.launch() started');
+		
 		// Setup the disassembler
 		DisassemblyClass.createDisassemblySingleton();
 
@@ -612,7 +632,13 @@ export class DebugSessionClass extends DebugSession {
 		this.on('update', BaseView.staticCallUpdateFunctions);
 
 		// Start the emulator and the connection.
+		console.log('[DEBUG] DebugSessionClass.launch() calling startEmulator()');
+		Log.log('[DEBUG] DebugSessionClass.launch() calling startEmulator()');
 		const msg = await this.startEmulator();
+		
+		console.log('[DEBUG] DebugSessionClass.launch() startEmulator() returned:', msg || 'undefined');
+		Log.log('[DEBUG] DebugSessionClass.launch() startEmulator() returned: ' + (msg || 'undefined'));
+		
 		if (msg) {
 			response.message = msg;
 			response.success = (msg === undefined);
@@ -624,6 +650,8 @@ export class DebugSessionClass extends DebugSession {
 		}
 
 		// Return
+		console.log('[DEBUG] DebugSessionClass.launch() sending response and completing');
+		Log.log('[DEBUG] DebugSessionClass.launch() sending response and completing');
 		this.sendResponse(response);
 	}
 
@@ -634,29 +662,44 @@ export class DebugSessionClass extends DebugSession {
 	 * @returns A Promise with an error text or undefined if no error.
 	 */
 	protected async startEmulator(): Promise<string | undefined> {
+		console.log('[DEBUG] DebugSessionClass.startEmulator() started');
+		Log.log('[DEBUG] DebugSessionClass.startEmulator() started');
+		
 		// Reset all decorations
 		Decoration.clearAllDecorations();
 
 		// Create the registers
+		console.log('[DEBUG] Creating Z80 registers...');
+		Log.log('[DEBUG] Creating Z80 registers...');
 		Z80RegistersClass.createRegisters(Settings.launch);
 
 		// Make sure the history is cleared
+		console.log('[DEBUG] Clearing CPU history...');
+		Log.log('[DEBUG] Clearing CPU history...');
 		CpuHistoryClass.setCpuHistory(undefined);
 
 		// Create the Remote
+		console.log('[DEBUG] Creating Remote with type:', Settings.launch.remoteType);
+		Log.log('[DEBUG] Creating Remote with type: ' + Settings.launch.remoteType);
 		RemoteFactory.createRemote(Settings.launch.remoteType);
 
 		Remote.on('warning', message => {
 			// Some problem occurred
+			console.log('[DEBUG] Remote warning:', message);
+			Log.log('[DEBUG] Remote warning: ' + message);
 			this.showWarning(message);
 		});
 
 		Remote.on('debug_console', message => {
 			// Show the message in the debug console
+			console.log('[DEBUG] Remote debug_console:', message);
+			Log.log('[DEBUG] Remote debug_console: ' + message);
 			this.debugConsoleIndentedText(message);
 		});
 
 		Remote.once('error', err => {
+			console.log('[DEBUG] Remote error occurred:', err);
+			Log.log('[DEBUG] Remote error occurred: ' + err);
 			err = ErrorWrapper.wrap(err);
 			(async () => {
 				// Some error occurred
@@ -702,7 +745,12 @@ export class DebugSessionClass extends DebugSession {
 
 		return new Promise<undefined>((resolve, reject) => {	// For now there is no unsuccessful (reject) execution
 			(async () => {
+				console.log('[DEBUG] Setting up Remote initialization handlers...');
+				Log.log('[DEBUG] Setting up Remote initialization handlers...');
+				
 				Remote.once('initialized', text => {
+					console.log('[DEBUG] Remote initialized event received with text:', text);
+					Log.log('[DEBUG] Remote initialized event received with text: ' + (text || 'undefined'));
 					(async () => {
 						// Print text if available, e.g. "dbg_uart_if initialized".
 						if (text) {

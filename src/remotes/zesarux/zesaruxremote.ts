@@ -92,11 +92,15 @@ export class ZesaruxRemote extends RemoteBase {
 
 	/// Initializes the machine.
 	public async doInitialization(): Promise<void> {
+		console.log('[DEBUG] ZesaruxRemote.doInitialization() started');
 		// Create the socket for communication (not connected yet)
+		console.log('[DEBUG] ZesaruxRemote.doInitialization() calling setupSocket()');
 		this.setupSocket();
 
 		// Connect zesarux debugger
+		console.log('[DEBUG] ZesaruxRemote.doInitialization() calling zSocket.connectDebugger()');
 		zSocket.connectDebugger();
+		console.log('[DEBUG] ZesaruxRemote.doInitialization() completed - waiting for socket connection');
 	}
 
 
@@ -192,16 +196,21 @@ export class ZesaruxRemote extends RemoteBase {
 			if (this.terminating)
 				return;
 
+			console.log('[DEBUG] ZesaruxRemote socket connected event fired');
 			(async () => {
 				try {
 					// Initialize
+					console.log('[DEBUG] ZesaruxRemote initializing after socket connection');
 					await zSocket.sendAwait('close-all-menus');
 					await zSocket.sendAwait('about');
+					console.log('[DEBUG] ZesaruxRemote getting version...');
 					this.zesaruxVersion = await zSocket.sendAwait('get-version');
+					console.log('[DEBUG] ZesaruxRemote version:', this.zesaruxVersion);
 					const version = semver.coerce(this.zesaruxVersion);
 					const min_version = semver.coerce(ZesaruxRemote.MIN_ZESARUX_VERSION);
 					// Check version. E.g. "7.1-SN", "10.3" or "10.10"
 					if (semver.lt(version, min_version)) {
+						console.log('[DEBUG] ZesaruxRemote version too low, disconnecting');
 						try {
 							// Version too low
 							await zSocket.quit();
@@ -214,76 +223,97 @@ export class ZesaruxRemote extends RemoteBase {
 						catch {};
 						return;
 					}
+					console.log('[DEBUG] ZesaruxRemote version check passed');
 					// Check support of hit count (pass count) in ZEsarUX
 					const minBpPassCountVersion = semver.coerce(ZesaruxRemote.MIN_BP_PASS_COUNT_VERSION);
 					this.bpPassCountSupported = semver.gte(version, minBpPassCountVersion);
+					console.log('[DEBUG] ZesaruxRemote breakpoint pass count supported:', this.bpPassCountSupported);
 
 					// Allow extensions
+					console.log('[DEBUG] ZesaruxRemote calling zesaruxConnected()');
 					this.zesaruxConnected();
 
 					// Wait for previous command to finish
+					console.log('[DEBUG] ZesaruxRemote waiting for command queue to empty');
 					await zSocket.executeWhenQueueIsEmpty();
 
 					const debug_settings = (Settings.launch.zrcp.skipInterrupt) ? 32 : 0;
+					console.log('[DEBUG] ZesaruxRemote setting debug settings:', debug_settings);
 					await zSocket.sendAwait('set-debug-settings ' + debug_settings);
 
 					// Reset the cpu before loading.
-					if (Settings.launch.zrcp.resetOnLaunch)
+					if (Settings.launch.zrcp.resetOnLaunch) {
+						console.log('[DEBUG] ZesaruxRemote resetting CPU before load');
 						await zSocket.sendAwait('hard-reset-cpu');
+					}
 
 					// Enter step-mode (stop)
+					console.log('[DEBUG] ZesaruxRemote entering CPU step mode');
 					await zSocket.sendAwait('enter-cpu-step');
 
 					//await zSocket.executeWhenQueueIsEmpty();
 					const waitBeforeMs = Settings.launch.zrcp.loadDelay;
+					console.log('[DEBUG] ZesaruxRemote waiting before load:', waitBeforeMs + 'ms');
 					await Utility.timeout(waitBeforeMs);
 
 					// Load executable
+					console.log('[DEBUG] ZesaruxRemote calling load()');
 					await this.load();
 
 					// Get the machine type, e.g. tbblue, zx48k etc.
 					// Is required to find the right slot/bank paging.
 					// Distinguished are only: 48k, 128k and tbblue.
+					console.log('[DEBUG] ZesaruxRemote getting machine type');
 					const mtResp = await zSocket.sendAwait('get-current-machine') as string;
 					const machineType = mtResp.toLowerCase();
+					console.log('[DEBUG] ZesaruxRemote machine type:', machineType);
 					if (machineType.includes("tbblue") || machineType.includes("zx spectrum next")) {
 						// "ZX Spectrum Next" since zesarux 9.2.
 						// 8x8k banks
+						console.log('[DEBUG] ZesaruxRemote detected ZX Spectrum Next/TBBlue machine');
 						Z80Registers.decoder = new DecodeZesaruxRegistersZxNext();
 						this.memoryModel = new MemoryModelZxNextTwoRom();
 					}
 					else if (machineType.includes("128k")) {
 						// 4x16k banks
+						console.log('[DEBUG] ZesaruxRemote detected ZX Spectrum 128K machine');
 						Z80Registers.decoder = new DecodeZesaruxRegistersZx128k();
 						this.memoryModel = new MemoryModelZx128k();
 					}
 					else if (machineType.includes("48k")) {
 						// 4x16k banks
+						console.log('[DEBUG] ZesaruxRemote detected ZX Spectrum 48K machine');
 						Z80Registers.decoder = new DecodeZesaruxRegistersZx48k();
 						this.memoryModel = new MemoryModelZx48k();
 					}
 					else if (machineType.includes("16k")) {
 						// 4x16k banks
+						console.log('[DEBUG] ZesaruxRemote detected ZX Spectrum 16K machine');
 						Z80Registers.decoder = new DecodeZesaruxRegistersZx16k();
 						this.memoryModel = new MemoryModelZx16k();
 					}
 					else if (machineType.includes("colecovision")) {
 						// 4 Banks
+						console.log('[DEBUG] ZesaruxRemote detected ColecoVision machine');
 						Z80Registers.decoder = new DecodeZesaruxRegistersColecovision();
 						this.memoryModel = new MemoryModelColecoVision();
 					}
 					else {
 						// For all others:
+						console.log('[DEBUG] ZesaruxRemote detected unknown machine type, using generic decoder');
 						Z80Registers.decoder = new DecodeZesaruxRegisters(1);
 						this.memoryModel = new MemoryModelUnknown();
 					}
 					// Init
+					console.log('[DEBUG] ZesaruxRemote initializing memory model:', this.memoryModel.constructor.name);
 					this.memoryModel.init();
 
 					// Initialize more
+					console.log('[DEBUG] ZesaruxRemote calling initAfterLoad()');
 					await this.initAfterLoad();
 
 					// Send 'initialize' to Machine.
+					console.log('[DEBUG] ZesaruxRemote emitting initialized event');
 					this.emit('initialized');
 				}
 				catch (e) {

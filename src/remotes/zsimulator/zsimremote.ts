@@ -315,16 +315,21 @@ export class ZSimRemote extends DzrpRemote {
 	 * - "CUSTOM": User defined memory.
 	 */
 	public configureMachine() {
+		console.log('[DEBUG] ZSimRemote.configureMachine() started');
 		const zsim = this.zsim;
+		console.log('[DEBUG] ZSimRemote.configureMachine() memory model:', zsim.memoryModel);
+		
 		// The instances executed during an instruction
 		this.executors = [];
 		// For restoring the state
 		this.serializeObjects = [];
 
 		Z80Registers.decoder = new Z80RegistersStandardDecoder();	// Required for the memory model.
+		console.log('[DEBUG] ZSimRemote.configureMachine() decoder set to Z80RegistersStandardDecoder');
 
 		// Create ports for paging
 		this.ports = new Z80Ports(zsim.defaultPortIn === 0xFF);
+		console.log('[DEBUG] ZSimRemote.configureMachine() created Z80Ports with defaultPortIn:', zsim.defaultPortIn === 0xFF);
 
 		// Check for beeper and border (both use the same port)
 		const zxBeeperEnabled = zsim.zxBeeper;
@@ -364,20 +369,26 @@ export class ZSimRemote extends DzrpRemote {
 		}
 
 		// Configure different memory models
+		console.log('[DEBUG] ZSimRemote.configureMachine() configuring memory model:', zsim.memoryModel);
 		switch (zsim.memoryModel) {
 			case "RAM":	// 64K RAM, no ZX
+				console.log('[DEBUG] ZSimRemote.configureMachine() creating MemoryModelAllRam');
 				this.memoryModel = new MemoryModelAllRam();
 				break;
 			case "ZX16K":	// ZX Spectrum 16K
+				console.log('[DEBUG] ZSimRemote.configureMachine() creating MemoryModelZx16k');
 				this.memoryModel = new MemoryModelZx16k();
 				break;
 			case "ZX48K":	// ZX Spectrum 48K
+				console.log('[DEBUG] ZSimRemote.configureMachine() creating MemoryModelZx48k');
 				this.memoryModel = new MemoryModelZx48k();
 				break;
 			case "ZX128K":	// ZX Spectrum 128K
+				console.log('[DEBUG] ZSimRemote.configureMachine() creating MemoryModelZx128k');
 				this.memoryModel = new MemoryModelZx128k();
 				break;
 			case "ZXNEXT":	// ZX Next
+				console.log('[DEBUG] ZSimRemote.configureMachine() creating MemoryModelZxNextTwoRom');
 				this.memoryModel = new MemoryModelZxNextTwoRom();
 				// Bank switching.
 				for (let tbblueRegister = 0x50; tbblueRegister <= 0x57; tbblueRegister++) {
@@ -415,18 +426,23 @@ export class ZSimRemote extends DzrpRemote {
 			default:
 				throw Error("Unknown memory model: '" + zsim.memoryModel + "'.");
 		}
+		console.log('[DEBUG] ZSimRemote.configureMachine() memory model created:', this.memoryModel.constructor.name);
 
 		// Create memory
+		console.log('[DEBUG] ZSimRemote.configureMachine() creating SimulatedMemory');
 		this.memory = new SimulatedMemory(this.memoryModel, this.ports);
 		this.serializeObjects.push(this.memory);
 
 		// Set slot and bank function.
+		console.log('[DEBUG] ZSimRemote.configureMachine() initializing memory model');
 		this.memoryModel.init();
 
 		// Create a Z80 CPU to emulate Z80 behavior
+		console.log('[DEBUG] ZSimRemote.configureMachine() creating Z80Cpu');
 		this.z80Cpu = new Z80Cpu(this.memory, this.ports, this.zsim);
 		this.executors.push(this.z80Cpu);
 		this.serializeObjects.push(this.z80Cpu);
+		console.log('[DEBUG] ZSimRemote.configureMachine() Z80Cpu created and added to executors');
 
 		// Check if ULA screen is enabled
 		const zxUlaScreen = zsim.ulaScreen;
@@ -528,7 +544,9 @@ export class ZSimRemote extends DzrpRemote {
 				this.z80Cpu.interrupt(non_maskable, data);
 			});
 			this.serializeObjects.push(this.customCode);
+			console.log('[DEBUG] ZSimRemote.configureMachine() custom code setup complete');
 		}
+		console.log('[DEBUG] ZSimRemote.configureMachine() completed successfully');
 	}
 
 
@@ -538,15 +556,30 @@ export class ZSimRemote extends DzrpRemote {
 	/// The successful emit takes place in 'onConnect' which should be called
 	/// by 'doInitialization' after a successful connect.
 	public async doInitialization(): Promise<void> {
-		// Decide what machine
-		this.configureMachine();
+		console.log('[DEBUG] ZSimRemote.doInitialization() started');
 
-		// Load sna/nex and loadObjs:
-		this.customCode?.execute();	// Need to be initialized here also because e.g. nex loading sets the border (port).
-		await this.load();
+		try {
+			// Decide what machine
+			console.log('[DEBUG] ZSimRemote.doInitialization() calling configureMachine()');
+			this.configureMachine();
+			console.log('[DEBUG] ZSimRemote.doInitialization() configureMachine() completed');
 
-		// Ready
-		this.emit('initialized');
+			// Load sna/nex and loadObjs:
+			console.log('[DEBUG] ZSimRemote.doInitialization() executing custom code');
+			this.customCode?.execute();	// Need to be initialized here also because e.g. nex loading sets the border (port).
+			
+			console.log('[DEBUG] ZSimRemote.doInitialization() calling load()');
+			await this.load();
+			console.log('[DEBUG] ZSimRemote.doInitialization() load() completed');
+
+			// Ready
+			console.log('[DEBUG] ZSimRemote.doInitialization() emitting initialized event');
+			this.emit('initialized');
+			console.log('[DEBUG] ZSimRemote.doInitialization() completed successfully');
+		} catch (error) {
+			console.log('[DEBUG] ZSimRemote.doInitialization() error:', error);
+			this.emit('error', error);
+		}
 	}
 
 	/**
