@@ -159,15 +159,18 @@ export class SjasmplusSldLabelParser extends LabelParserBase {
 
 	/**
 	 * Checks the SLD file version and throws an exception if too old.
+	 * Also detects if a BDS file was accidentally configured in the sjasmplus section.
 	 */
 	protected checkSldVersion(lines: Array<string>) {
 		// Check only first line
 		if (lines.length < 1)
 			this.throwError("'" + this.config.path + "' is empty.");	// throws
+
 		// First line
 		const fields = lines[0].split('|');
-		if (fields[1] != 'SLD.data.version')
+		if (fields[1] != 'SLD.data.version') {
 			this.throwError("'" + this.config.path + "': SLD data version not found.");
+		}
 		const version = fields[2] || '0';
 		const requiredVersion = 1;
 		if (parseInt(version) < requiredVersion)

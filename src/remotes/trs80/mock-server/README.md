@@ -1,10 +1,10 @@
-# TRS-80GP Mock Server
+# trs80gp Mock Server
 
-This is a mock server that simulates the TRS-80GP emulator's JSON-RPC interface for testing the DeZog debugger extension without requiring the actual emulator.
+This is a mock server that simulates the trs80gp emulator's JSON-RPC interface for testing the DeZog debugger extension without requiring the actual emulator.
 
 ## Features
 
-- Implements the JSON-RPC protocol used by TRS-80GP emulator
+- Implements the JSON-RPC protocol used by trs80gp emulator
 - Simulates CPU registers and memory
 - Supports basic debugging operations (step, continue, breakpoints)
 - Responds to all the commands used by DeZog's TRS-80 remote implementation

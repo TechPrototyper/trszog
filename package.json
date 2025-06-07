@@ -1,9 +1,9 @@
 {
 	"name": "dezog",
 	"displayName": "DeZog - Development Edition",
-	"version": "3.6.3-dev-trs80",
+	"version": "3.6.3-dev-trs80-comprehensive",
 	"publisher": "TechPrototyper",
-	"description": "Visual Studio Code Debugger for the Z80 and ZX Spectrum/ZX81. Development build with TRS-80 register format configuration and mock server.",
+	"description": "Visual Studio Code Debugger for the Z80 and ZX Spectrum/ZX81. Development build with comprehensive debug logging and TRS-80 consistency fixes.",
 	"author": {
 		"name": "Tim Walter"
 	},

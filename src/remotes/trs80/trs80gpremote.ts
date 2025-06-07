@@ -21,7 +21,7 @@ interface JsonRpcMessage {
 }
 
 /**
- * Base TRS-80GP Remote class that handles communication with trs80gp emulator via JSON-RPC over TCP.
+ * Base trs80gp Remote class that handles communication with trs80gp emulator via JSON-RPC over TCP.
  * This class contains the common functionality for all TRS-80 models supported by the trs80gp emulator.
  * 
  * Model-specific implementations should extend this class and override methods as needed
@@ -67,7 +67,7 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
 
         this.socket.on('error', (err: Error) => {
             this.emit('debug_console', `Socket error: ${err.message}`);
-            this.emit('warning', `TRS-80GP connection error: ${err.message}`);
+            this.emit('warning', `trs80gp connection error: ${err.message}`);
         });
 
         this.socket.on('close', () => {
@@ -102,20 +102,29 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      * Handle a parsed JSON-RPC message.
      */
     private handleJsonRpcMessage(message: JsonRpcMessage): void {
+        console.log(`[TRS80GP] Received JSON-RPC message: ${JSON.stringify(message)}`);
+        this.emit('debug_console', `Received JSON-RPC: ${message.method || 'response'}`);
+        
         if (message.id !== undefined) {
             // This is a response to a request we sent
             const pending = this.pendingRequests.get(message.id as number);
             if (pending) {
+                console.log(`[TRS80GP] Found pending request for id: ${message.id}`);
                 this.pendingRequests.delete(message.id as number);
                 
                 if (message.error) {
+                    console.log(`[TRS80GP] Error response: ${JSON.stringify(message.error)}`);
                     pending.reject(new Error(`JSON-RPC error ${message.error.code}: ${message.error.message}`));
                 } else {
+                    console.log(`[TRS80GP] Success response: ${JSON.stringify(message.result)}`);
                     pending.resolve(message.result);
                 }
+            } else {
+                console.log(`[TRS80GP] No pending request found for id: ${message.id}`);
             }
         } else if (message.method) {
             // This is a notification/event from the emulator
+            console.log(`[TRS80GP] Handling notification: ${message.method}`);
             this.handleTrs80GpNotification(message.method, message.params);
         }
     }
@@ -127,15 +136,15 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
     protected handleTrs80GpNotification(method: string, params: any): void {
         switch (method) {
             case 'paused':
-                this.emit('debug_console', 'TRS-80GP emulator paused');
+                this.emit('debug_console', 'trs80gp emulator paused');
                 // Handle pause event
                 break;
             case 'breakpoint':
-                this.emit('debug_console', `TRS-80GP breakpoint hit at ${params?.address}`);
+                this.emit('debug_console', `trs80gp breakpoint hit at ${params?.address}`);
                 // Handle breakpoint
                 break;
             default:
-                this.emit('debug_console', `Unknown TRS-80GP notification: ${method}`);
+                this.emit('debug_console', `Unknown trs80gp notification: ${method}`);
         }
     }
 
@@ -152,6 +161,9 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
                 id
             };
 
+            console.log(`[TRS80GP] Sending JSON-RPC request: ${JSON.stringify(message)}`);
+            this.emit('debug_console', `Sending JSON-RPC request: ${method} with id ${id}`);
+            
             this.pendingRequests.set(id, {resolve, reject});
             
             const messageStr = JSON.stringify(message) + '\n';
@@ -161,7 +173,9 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
             setTimeout(() => {
                 if (this.pendingRequests.has(id)) {
                     this.pendingRequests.delete(id);
-                    reject(new Error(`TRS-80GP JSON-RPC request timeout for method: ${method}`));
+                    console.log(`[TRS80GP] Request timeout for method: ${method}, id: ${id}`);
+                    this.emit('debug_console', `Request timeout for method: ${method}, id: ${id}`);
+                    reject(new Error(`trs80gp JSON-RPC request timeout for method: ${method}`));
                 }
             }, 5000); // 5 second timeout
         });
@@ -221,21 +235,78 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      * by 'doInitialization' after a successful connect.
      */
     public async doInitialization(): Promise<void> {
-        console.log('Trs80GpRemote.doInitialization() - Starting TRS-80GP remote initialization');
+        console.log('[TRS80GP] Starting Trs80GpRemote.doInitialization()');
+        this.emit('debug_console', 'Starting TRS-80GP remote initialization');
+        
         try {
-            // Connect to TRS-80GP emulator
-            console.log('Trs80GpRemote.doInitialization() - Attempting to connect socket');
+            // Connect to trs80gp
+            console.log('[TRS80GP] Attempting to connect socket...');
+            this.emit('debug_console', 'Connecting to TRS-80GP emulator...');
             await this.connectSocket();
-            console.log('Trs80GpRemote.doInitialization() - Socket connected successfully');
             
-            // Call onConnect to complete the initialization
-            console.log('Trs80GpRemote.doInitialization() - Calling onConnect');
+            console.log('[TRS80GP] Socket connected, calling onConnect()');
+            this.emit('debug_console', 'Socket connected, initializing protocol...');
+            
+            // Initialize the remote (sends init command and emits 'initialized' on success)
             await this.onConnect();
-            console.log('Trs80GpRemote.doInitialization() - onConnect completed successfully');
-        } catch (error) {
-            console.log(`Trs80GpRemote.doInitialization() - Error during initialization: ${error.message}`);
-            this.emit('error', error);
+            
+            console.log('[TRS80GP] Trs80GpRemote.doInitialization() completed successfully');
+            this.emit('debug_console', 'TRS-80GP remote initialization completed');
+        } catch (err) {
+            console.log(`[TRS80GP] doInitialization() failed: ${err.message}`);
+            this.emit('debug_console', `TRS-80GP initialization failed: ${err.message}`);
+            this.emit('error', err);
         }
+    }
+
+    //---- DZRP Protocol Implementation ----
+
+    /**
+     * Call this from 'doInitialization' when a successful connection
+     * has been opened to the Remote.
+     * @emits this.emit('initialized') or this.emit('error', Error(...))
+     */
+    protected async onConnect(): Promise<void> {
+        console.log('[TRS80GP] Starting onConnect() - sending init command');
+        this.emit('debug_console', 'Sending initialization command to TRS-80GP...');
+        
+        try {
+            // Send the init command using the JSON-RPC protocol
+            const result = await this.sendDzrpCmdInit();
+            
+            console.log('[TRS80GP] Init command result:', JSON.stringify(result));
+            this.emit('debug_console', `Init command result: ${JSON.stringify(result)}`);
+            
+            if (result.error) {
+                console.log('[TRS80GP] Init failed with error:', result.error);
+                throw new Error(result.error);
+            }
+
+            // Emit 'initialized' event which the system is waiting for
+            const message = `${result.programName} initialized`;
+            console.log(`[TRS80GP] Emitting 'initialized' event with message: ${message}`);
+            this.emit('debug_console', `Emitting initialized event: ${message}`);
+            this.emit('initialized', message);
+            
+        } catch (err) {
+            console.log(`[TRS80GP] onConnect() failed: ${err.message}`);
+            this.emit('debug_console', `Connection initialization failed: ${err.message}`);
+            this.emit('error', err);
+        }
+    }
+
+    /**
+     * Override to create the appropriate Z80 registers decoder for TRS-80.
+     */
+    protected createZ80RegistersDecoder(): any {
+        // Import and return the standard decoder
+        const Z80RegistersDecoder = require('../../remotes/z80registers').Z80RegistersStandardDecoder;
+        return new Z80RegistersDecoder();
+    }
+
+    // Add DzrpMachineType reference for convenience
+    protected get DzrpMachineType() {
+        return DzrpMachineType;
     }
 
     /**

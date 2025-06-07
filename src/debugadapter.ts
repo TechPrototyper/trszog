@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {HtmlView} from './views/htmlview';
-import {Breakpoint, CapabilitiesEvent, ContinuedEvent, DebugSession, InitializedEvent, InvalidatedEvent, Scope, Source, StackFrame, StoppedEvent, TerminatedEvent, Thread} from '@vscode/debugadapter';
+import {Breakpoint, CapabilitiesEvent, ContinuedEvent, DebugSession, InitializedEvent, InvalidatedEvent, OutputEvent, Scope, Source, StackFrame, StoppedEvent, TerminatedEvent, Thread} from '@vscode/debugadapter';
 import {DebugProtocol} from '@vscode/debugprotocol';
 import {CallStackFrame} from './callstackframe';
 import {Decoration} from './decoration';
@@ -443,6 +443,7 @@ export class DebugSessionClass extends DebugSession {
 	protected async initializeRequest(response: DebugProtocol.InitializeResponse, _args: DebugProtocol.InitializeRequestArguments): Promise<void> {
 		console.log('[DEBUG] DebugSessionClass.initializeRequest() started');
 		Log.log('[DEBUG] DebugSessionClass.initializeRequest() started');
+		this.sendEvent(new OutputEvent('[DEBUG] DebugSessionClass.initializeRequest() started\n', 'console'));
 		
 		// Stop any running program.
 		Run.terminate();
@@ -515,10 +516,12 @@ export class DebugSessionClass extends DebugSession {
 
 		console.log('[DEBUG] DebugSessionClass.initializeRequest() sending response');
 		Log.log('[DEBUG] DebugSessionClass.initializeRequest() sending response');
+		this.sendEvent(new OutputEvent('[DEBUG] DebugSessionClass.initializeRequest() sending response\n', 'console'));
 		this.sendResponse(response);
 
 		console.log('[DEBUG] DebugSessionClass.initializeRequest() completed');
 		Log.log('[DEBUG] DebugSessionClass.initializeRequest() completed');
+		this.sendEvent(new OutputEvent('[DEBUG] DebugSessionClass.initializeRequest() completed\n', 'console'));
 		// Note: The InitializedEvent will be send when the socket connection has been successful. Afterwards the breakpoints are set.
 	}
 
@@ -551,6 +554,7 @@ export class DebugSessionClass extends DebugSession {
 	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: SettingsParameters) {
 		console.log('[DEBUG] DebugSessionClass.launchRequest() started');
 		Log.log('[DEBUG] DebugSessionClass.launchRequest() started');
+		this.sendEvent(new OutputEvent('[DEBUG] DebugSessionClass.launchRequest() started\n', 'console'));
 		
 		try {
 			//console.log('launchRequest');
@@ -597,10 +601,12 @@ export class DebugSessionClass extends DebugSession {
 			// Launch emulator
 			console.log('[DEBUG] DebugSessionClass.launchRequest() calling this.launch()');
 			Log.log('[DEBUG] DebugSessionClass.launchRequest() calling this.launch()');
+			this.sendEvent(new OutputEvent('[DEBUG] DebugSessionClass.launchRequest() calling this.launch()\n', 'console'));
 			await this.launch(response);
 			
 			console.log('[DEBUG] DebugSessionClass.launchRequest() completed successfully');
 			Log.log('[DEBUG] DebugSessionClass.launchRequest() completed successfully');
+			this.sendEvent(new OutputEvent('[DEBUG] DebugSessionClass.launchRequest() completed successfully\n', 'console'));
 		}
 		catch (e) {
 			// Some error occurred
@@ -664,6 +670,7 @@ export class DebugSessionClass extends DebugSession {
 	protected async startEmulator(): Promise<string | undefined> {
 		console.log('[DEBUG] DebugSessionClass.startEmulator() started');
 		Log.log('[DEBUG] DebugSessionClass.startEmulator() started');
+		this.sendEvent(new OutputEvent('[DEBUG] DebugSessionClass.startEmulator() started\n', 'console'));
 		
 		// Reset all decorations
 		Decoration.clearAllDecorations();
@@ -671,22 +678,26 @@ export class DebugSessionClass extends DebugSession {
 		// Create the registers
 		console.log('[DEBUG] Creating Z80 registers...');
 		Log.log('[DEBUG] Creating Z80 registers...');
+		this.sendEvent(new OutputEvent('[DEBUG] Creating Z80 registers...\n', 'console'));
 		Z80RegistersClass.createRegisters(Settings.launch);
 
 		// Make sure the history is cleared
 		console.log('[DEBUG] Clearing CPU history...');
 		Log.log('[DEBUG] Clearing CPU history...');
+		this.sendEvent(new OutputEvent('[DEBUG] Clearing CPU history...\n', 'console'));
 		CpuHistoryClass.setCpuHistory(undefined);
 
 		// Create the Remote
 		console.log('[DEBUG] Creating Remote with type:', Settings.launch.remoteType);
 		Log.log('[DEBUG] Creating Remote with type: ' + Settings.launch.remoteType);
+		this.sendEvent(new OutputEvent(`[DEBUG] Creating Remote with type: ${Settings.launch.remoteType}\n`, 'console'));
 		RemoteFactory.createRemote(Settings.launch.remoteType);
 
 		Remote.on('warning', message => {
 			// Some problem occurred
 			console.log('[DEBUG] Remote warning:', message);
 			Log.log('[DEBUG] Remote warning: ' + message);
+			this.sendEvent(new OutputEvent(`[DEBUG] Remote warning: ${message}\n`, 'console'));
 			this.showWarning(message);
 		});
 
@@ -694,12 +705,14 @@ export class DebugSessionClass extends DebugSession {
 			// Show the message in the debug console
 			console.log('[DEBUG] Remote debug_console:', message);
 			Log.log('[DEBUG] Remote debug_console: ' + message);
+			this.sendEvent(new OutputEvent(`[DEBUG] Remote debug_console: ${message}\n`, 'console'));
 			this.debugConsoleIndentedText(message);
 		});
 
 		Remote.once('error', err => {
 			console.log('[DEBUG] Remote error occurred:', err);
 			Log.log('[DEBUG] Remote error occurred: ' + err);
+			this.sendEvent(new OutputEvent(`[DEBUG] Remote error occurred: ${err}\n`, 'console'));
 			err = ErrorWrapper.wrap(err);
 			(async () => {
 				// Some error occurred
@@ -710,6 +723,7 @@ export class DebugSessionClass extends DebugSession {
 
 		Remote.once('terminated', message => {
 			// Emulator has been terminated (e.g. by unit tests)
+			this.sendEvent(new OutputEvent(`[DEBUG] Remote terminated: ${message}\n`, 'console'));
 			this.terminate(message);
 		});
 
@@ -747,10 +761,12 @@ export class DebugSessionClass extends DebugSession {
 			(async () => {
 				console.log('[DEBUG] Setting up Remote initialization handlers...');
 				Log.log('[DEBUG] Setting up Remote initialization handlers...');
+				this.sendEvent(new OutputEvent('[DEBUG] Setting up Remote initialization handlers...\n', 'console'));
 				
 				Remote.once('initialized', text => {
 					console.log('[DEBUG] Remote initialized event received with text:', text);
 					Log.log('[DEBUG] Remote initialized event received with text: ' + (text || 'undefined'));
+					this.sendEvent(new OutputEvent(`[DEBUG] Remote initialized event received with text: ${text || 'undefined'}\n`, 'console'));
 					(async () => {
 						// Print text if available, e.g. "dbg_uart_if initialized".
 						if (text) {
@@ -770,17 +786,29 @@ export class DebugSessionClass extends DebugSession {
 							// Note: 'loadObjs' is done after 'load'. Reason is:
 							// loadObjs needs labels ('start'), labels require the memory model.
 							// And zesarux might change the memory model on 'load'.
+							console.log('[DEBUG] Reading list files...');
+							Log.log('[DEBUG] Reading list files...');
+							this.sendEvent(new OutputEvent('[DEBUG] Reading list files...\n', 'console'));
 							Remote.readListFiles(Settings.launch);
 							// Check to show a warning if sna/nex file is too old.
 							this.checkDateSnaNexFile();
 							// Load objs to memory
+							console.log('[DEBUG] Loading objects to memory...');
+							Log.log('[DEBUG] Loading objects to memory...');
+							this.sendEvent(new OutputEvent('[DEBUG] Loading objects to memory...\n', 'console'));
 							await Remote.loadObjs();
 							// This needs to be done after the labels have been read
+							console.log('[DEBUG] Initializing watchpoints, assertions, and logpoints...');
+							Log.log('[DEBUG] Initializing watchpoints, assertions, and logpoints...');
+							this.sendEvent(new OutputEvent('[DEBUG] Initializing watchpoints, assertions, and logpoints...\n', 'console'));
 							await Remote.initWpmemAssertionLogpoints();
 						}
 						catch (e) {
 							// Some error occurred during loading, e.g. file not found.
 							const error = e.message || "Error";
+							console.log('[DEBUG] Error during file loading:', error);
+							Log.log('[DEBUG] Error during file loading: ' + error);
+							this.sendEvent(new OutputEvent(`[DEBUG] Error during file loading: ${error}\n`, 'console'));
 							await Remote.terminate('Init remote (readListFiles): ' + error);
 							reject(e);
 							DebugSessionClass.singleton().unitTestsStartCallbacks?.reject(e);
@@ -789,24 +817,45 @@ export class DebugSessionClass extends DebugSession {
 
 						try {
 							// Inform Disassembler of MemoryModel and other arguments.
+							console.log('[DEBUG] Setting up disassembler memory model...');
+							Log.log('[DEBUG] Setting up disassembler memory model...');
+							this.sendEvent(new OutputEvent('[DEBUG] Setting up disassembler memory model...\n', 'console'));
 							Disassembly.setMemoryModel(Remote.memoryModel);
 
 							// Instantiate file watchers for revEng auto re-load
+							console.log('[DEBUG] Installing reload file watchers...');
+							Log.log('[DEBUG] Installing reload file watchers...');
+							this.sendEvent(new OutputEvent('[DEBUG] Installing reload file watchers...\n', 'console'));
 							this.installReloadFileWatchers();
 
 							// Set Program Counter to execAddress
+							console.log('[DEBUG] Setting launch exec address...');
+							Log.log('[DEBUG] Setting launch exec address...');
+							this.sendEvent(new OutputEvent('[DEBUG] Setting launch exec address...\n', 'console'));
 							await Remote.setLaunchExecAddress();
 
 							// Get initial registers
+							console.log('[DEBUG] Getting initial registers from emulator...');
+							Log.log('[DEBUG] Getting initial registers from emulator...');
+							this.sendEvent(new OutputEvent('[DEBUG] Getting initial registers from emulator...\n', 'console'));
 							await Remote.getRegistersFromEmulator();
+							console.log('[DEBUG] Getting call stack from emulator...');
+							Log.log('[DEBUG] Getting call stack from emulator...');
+							this.sendEvent(new OutputEvent('[DEBUG] Getting call stack from emulator...\n', 'console'));
 							await Remote.getCallStackFromEmulator();
 
 							// Initialize Cpu- or StepHistory.
+							console.log('[DEBUG] Initializing step history...');
+							Log.log('[DEBUG] Initializing step history...');
+							this.sendEvent(new OutputEvent('[DEBUG] Initializing step history...\n', 'console'));
 							if (!StepHistory.decoder)
 								StepHistory.decoder = Z80Registers.decoder;
 							StepHistory.init();
 
 							// Run user commands after load.
+							console.log('[DEBUG] Running user commands after launch...');
+							Log.log('[DEBUG] Running user commands after launch...');
+							this.sendEvent(new OutputEvent('[DEBUG] Running user commands after launch...\n', 'console'));
 							for (const cmd of Settings.launch.commandsAfterLaunch) {
 								this.debugConsoleAppendLine(cmd);
 								try {
@@ -824,6 +873,9 @@ export class DebugSessionClass extends DebugSession {
 							// Special handling for custom code
 							if (Remote instanceof ZSimRemote) {
 								// Start custom code (if not unit test)
+								console.log('[DEBUG] Handling ZSimRemote custom code...');
+								Log.log('[DEBUG] Handling ZSimRemote custom code...');
+								this.sendEvent(new OutputEvent('[DEBUG] Handling ZSimRemote custom code...\n', 'console'));
 								const zsim = Remote;
 								if (this.state === DbgAdapterState.NORMAL) {
 									// Special handling for zsim: Re-init custom code.
@@ -835,6 +887,9 @@ export class DebugSessionClass extends DebugSession {
 								// there would be a dependency in RemoteFactory to vscode which in turn
 								// makes problems for the unit tests.
 								// Adds a window that displays the ZX screen.
+								console.log('[DEBUG] Creating ZSimulation view...');
+								Log.log('[DEBUG] Creating ZSimulation view...');
+								this.sendEvent(new OutputEvent('[DEBUG] Creating ZSimulation view...\n', 'console'));
 								const zsimView = new ZSimulationView(zsim);
 								await zsimView.waitOnInitView();
 							}
@@ -842,6 +897,9 @@ export class DebugSessionClass extends DebugSession {
 						catch (e) {
 							// Some error occurred during loading, e.g. file not found.
 							const error = e.message || "Error";
+							console.log('[DEBUG] Error during initialization:', error);
+							Log.log('[DEBUG] Error during initialization: ' + error);
+							this.sendEvent(new OutputEvent(`[DEBUG] Error during initialization: ${error}\n`, 'console'));
 							await Remote.terminate('Error during initialization: ' + error);
 							reject(e);
 							DebugSessionClass.singleton().unitTestsStartCallbacks?.reject(e);
@@ -849,17 +907,32 @@ export class DebugSessionClass extends DebugSession {
 						}
 
 						// Socket is connected, allow setting breakpoints
+						console.log('[DEBUG] Sending InitializedEvent...');
+						Log.log('[DEBUG] Sending InitializedEvent...');
+						this.sendEvent(new OutputEvent('[DEBUG] Sending InitializedEvent...\n', 'console'));
 						this.sendEvent(new InitializedEvent());
 						// Respond
+						console.log('[DEBUG] Remote initialization completed successfully, resolving promise');
+						Log.log('[DEBUG] Remote initialization completed successfully, resolving promise');
+						this.sendEvent(new OutputEvent('[DEBUG] Remote initialization completed successfully, resolving promise\n', 'console'));
 						resolve(undefined);
 
 						// Check if program should be automatically started
+						console.log('[DEBUG] Checking auto-start settings...');
+						Log.log('[DEBUG] Checking auto-start settings...');
+						this.sendEvent(new OutputEvent('[DEBUG] Checking auto-start settings...\n', 'console'));
 						StepHistory.clear();
 						if (this.unitTestsStartCallbacks) {
+							console.log('[DEBUG] Unit test mode detected, calling test callbacks');
+							Log.log('[DEBUG] Unit test mode detected, calling test callbacks');
+							this.sendEvent(new OutputEvent('[DEBUG] Unit test mode detected, calling test callbacks\n', 'console'));
 							this.unitTestsStartCallbacks.resolve(this);
 						}
 						else if (Settings.launch.startAutomatically) {
 							// Delay call because the breakpoints are set afterwards.
+							console.log('[DEBUG] Auto-start enabled, scheduling continue in 500ms');
+							Log.log('[DEBUG] Auto-start enabled, scheduling continue in 500ms');
+							this.sendEvent(new OutputEvent('[DEBUG] Auto-start enabled, scheduling continue in 500ms\n', 'console'));
 							setTimeout(() => {
 								// Save start address for a possibly later disassembly.
 								// Note: for !startAutomatically it is not required because the stackTraceRequest will do the same.
@@ -874,6 +947,9 @@ export class DebugSessionClass extends DebugSession {
 						}
 						else {
 							// Break
+							console.log('[DEBUG] Auto-start disabled, sending stopped event');
+							Log.log('[DEBUG] Auto-start disabled, sending stopped event');
+							this.sendEvent(new OutputEvent('[DEBUG] Auto-start disabled, sending stopped event\n', 'console'));
 							this.sendEvent(new StoppedEvent('stop on start', DebugSessionClass.THREAD_ID));
 						}
 					})();
@@ -882,16 +958,19 @@ export class DebugSessionClass extends DebugSession {
 				// Initialize Remote
 				try {
 					console.log('[DEBUG] Starting Remote.init()...');
-					this.debugConsoleAppendLine('[DEBUG] Starting Remote.init()...');
+					Log.log('[DEBUG] Starting Remote.init()...');
+					this.sendEvent(new OutputEvent('[DEBUG] Starting Remote.init()...\n', 'console'));
 					await Remote.init();
 					console.log('[DEBUG] Remote.init() completed successfully');
-					this.debugConsoleAppendLine('[DEBUG] Remote.init() completed successfully');
+					Log.log('[DEBUG] Remote.init() completed successfully');
+					this.sendEvent(new OutputEvent('[DEBUG] Remote.init() completed successfully\n', 'console'));
 				}
 				catch (e) {
 					// Some error occurred
 					const error = e.message || "Error";
 					console.log('[DEBUG] Remote.init() failed:', error);
-					this.debugConsoleAppendLine('[DEBUG] Remote.init() failed: ' + error);
+					Log.log('[DEBUG] Remote.init() failed: ' + error);
+					this.sendEvent(new OutputEvent(`[DEBUG] Remote.init() failed: ${error}\n`, 'console'));
 					await Remote.terminate('Init remote: ' + error);
 					reject(e);
 					DebugSessionClass.singleton().unitTestsStartCallbacks?.reject(e);
