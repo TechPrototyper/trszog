@@ -882,17 +882,17 @@
 								}
 							},
 							"trs80": {
-								"description": "The configuration for debugging with TRS-80GP emulator.",
+								"description": "The configuration for debugging with trs80gp emulator.",
 								"type": "object",
 								"properties": {
 									"hostname": {
 										"type": "string",
-										"description": "The hostname/IP address of the TRS-80GP socket.",
+										"description": "The hostname/IP address of the trs80gp socket.",
 										"default": "localhost"
 									},
 									"port": {
 										"type": "number",
-										"description": "The port of the TRS-80GP socket.",
+										"description": "The port of the trs80gp socket.",
 										"default": 49152
 									},
 									"socketTimeout": {
@@ -901,7 +901,7 @@
 										"default": 5
 									},
 									"emulator": {
-										"description": "TRS-80GP emulator launch configuration.",
+										"description": "trs80gp emulator launch configuration.",
 										"type": "object",
 										"properties": {
 											"path": {
@@ -1554,12 +1554,12 @@
 						}
 					},
 					{
-						"label": "DeZog: TRS-80GP",
-						"description": "Configuration for DeZog to use the TRS-80GP emulator.",
+						"label": "DeZog: trs80gp",
+						"description": "Configuration for DeZog to use the trs80gp emulator.",
 						"body": {
 							"type": "dezog",
 							"request": "launch",
-							"name": "TRS-80GP",
+							"name": "trs80gp",
 							"remoteType": "trs80gp",
 							"trs80": {
 								"port": 49152,
@@ -1622,16 +1622,20 @@
 						}
 					},
 					{
-						"label": "DeZog: Simulator - TRS-80",
-						"description": "Configuration for DeZog to use the internal simulator for TRS-80 development with zmac assembler.",
+						"label": "DeZog: TRS-80 Mock Server",
+						"description": "Configuration for DeZog to use the TRS-80 mock server for development without requiring the real emulator.",
 						"body": {
 							"type": "dezog",
 							"request": "launch",
-							"name": "Simulator - TRS-80",
-							"remoteType": "zsim",
-							"zsim": {
-								"visualMemory": true,
-								"memoryModel": "RAM"
+							"name": "TRS-80 Mock Server",
+							"remoteType": "trs80gp",
+							"trs80": {
+								"port": 49152,
+								"useMock": true,
+								"emulator": {
+									"model": 1,
+									"memorySize": 48
+								}
 							},
 							"zmac": [
 								{

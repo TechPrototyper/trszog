@@ -35,7 +35,7 @@ export class RemoteFactory {
 			case 'mame':
 				RemoteFactory.setGlobalRemote(new MameGdbRemote());
 				break;
-			case 'trs80gp':	// TRS-80GP emulator (supports multiple TRS-80 models)
+			case 'trs80gp':	// trs80gp emulator (supports multiple TRS-80 models)
 				RemoteFactory.setGlobalRemote(new Trs80Remote());
 				break;
 			default:

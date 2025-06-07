@@ -1,7 +1,7 @@
 import * as net from 'net';
 
 /**
- * Port allocation manager for TRS-80GP emulator instances.
+ * Port allocation manager for trs80gp emulator instances.
  * Handles finding available ports in the range 49152 down to 49089.
  */
 export class PortManager {
@@ -111,7 +111,7 @@ export class PortManager {
     }
     
     /**
-     * Check if the default TRS-80GP port (49152) is available.
+     * Check if the default trs80gp port (49152) is available.
      * This is a convenience method for quick checks.
      * 
      * @returns Promise that resolves to true if the default port is available
@@ -121,7 +121,7 @@ export class PortManager {
     }
     
     /**
-     * Get the default port number for TRS-80GP emulator.
+     * Get the default port number for trs80gp emulator.
      * 
      * @returns The default port number (49152)
      */
@@ -130,7 +130,7 @@ export class PortManager {
     }
     
     /**
-     * Validate that a port number is within the acceptable range for TRS-80GP.
+     * Validate that a port number is within the acceptable range for trs80gp.
      * 
      * @param port Port number to validate
      * @returns True if port is in the valid range

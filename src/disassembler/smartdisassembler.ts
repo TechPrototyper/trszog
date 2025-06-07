@@ -138,6 +138,14 @@ export class SmartDisassembler {
 	 */
 	public setMemoryModel(memModel: MemoryModel) {
 		this.memoryModel = memModel;
+		
+		// Handle undefined memory model or simple memory models that don't have slotRanges (like TRS-80)
+		if (!memModel || !memModel.slotRanges || memModel.slotRanges.length === 0) {
+			// For simple memory models, set a default slot covering the full 64k range
+			this.setSlotBankInfo(0x0000, 0xFFFF, 0, true);
+			return;
+		}
+		
 		const slotLen = memModel.slotRanges.length;
 		for (let slot = 0; slot < slotLen; slot++) {
 			const range = memModel.slotRanges[slot];

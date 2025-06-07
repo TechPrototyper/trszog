@@ -3,6 +3,7 @@ import {DzrpQueuedRemote} from '../dzrp/dzrpqueuedremote';
 import {DzrpMachineType} from '../dzrp/dzrpremote';
 import {Socket} from 'net';
 import {PortManager} from './portmanager';
+import {Z80RegistersStandardDecoder} from '../z80registersstandarddecoder';
 
 /**
  * JSON-RPC message interface for communication with trs80gp emulator.
@@ -236,12 +237,12 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      */
     public async doInitialization(): Promise<void> {
         console.log('[TRS80GP] Starting Trs80GpRemote.doInitialization()');
-        this.emit('debug_console', 'Starting TRS-80GP remote initialization');
+        this.emit('debug_console', 'Starting trs80gp remote initialization');
         
         try {
             // Connect to trs80gp
             console.log('[TRS80GP] Attempting to connect socket...');
-            this.emit('debug_console', 'Connecting to TRS-80GP emulator...');
+            this.emit('debug_console', 'Connecting to trs80gp emulator...');
             await this.connectSocket();
             
             console.log('[TRS80GP] Socket connected, calling onConnect()');
@@ -251,10 +252,10 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
             await this.onConnect();
             
             console.log('[TRS80GP] Trs80GpRemote.doInitialization() completed successfully');
-            this.emit('debug_console', 'TRS-80GP remote initialization completed');
+            this.emit('debug_console', 'trs80gp remote initialization completed');
         } catch (err) {
             console.log(`[TRS80GP] doInitialization() failed: ${err.message}`);
-            this.emit('debug_console', `TRS-80GP initialization failed: ${err.message}`);
+            this.emit('debug_console', `trs80gp initialization failed: ${err.message}`);
             this.emit('error', err);
         }
     }
@@ -268,7 +269,7 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      */
     protected async onConnect(): Promise<void> {
         console.log('[TRS80GP] Starting onConnect() - sending init command');
-        this.emit('debug_console', 'Sending initialization command to TRS-80GP...');
+        this.emit('debug_console', 'Sending initialization command to trs80gp...');
         
         try {
             // Send the init command using the JSON-RPC protocol
@@ -299,9 +300,8 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      * Override to create the appropriate Z80 registers decoder for TRS-80.
      */
     protected createZ80RegistersDecoder(): any {
-        // Import and return the standard decoder
-        const Z80RegistersDecoder = require('../../remotes/z80registers').Z80RegistersStandardDecoder;
-        return new Z80RegistersDecoder();
+        // Return the standard decoder for TRS-80
+        return new Z80RegistersStandardDecoder();
     }
 
     // Add DzrpMachineType reference for convenience
@@ -372,11 +372,18 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
     /**
      * Convert trs80gp register format to DeZog format.
      * Subclasses can override this for model-specific register handling.
+     * 
+     * This method handles both scenarios:
+     * 1. When 16-bit registers are present in the emulator response
+     * 2. When only 8-bit registers are present, constructing 16-bit values from 8-bit components
      */
     protected convertTrs80GpRegistersToDeZog(registers: any): Uint16Array {
-        const regData = new Uint16Array(20); // Adjust size as needed
+        const regData = new Uint16Array(16); // Z80_REG.IM(13) + 1 + slotCount(1) + slots(1) = 16
         
         if (!registers) {
+            // Even with no register data, set up slot information for TRS-80
+            regData[14] = 1;  // Slot count
+            regData[15] = 0;  // Single slot with bank 0
             return regData;
         }
 
@@ -402,20 +409,48 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
             return 0;
         };
 
+        // Helper function to build 16-bit register from 8-bit components if needed
+        const get16BitRegister = (reg16Name: string, highReg: string, lowReg: string, altName?: string): number => {
+            // First try to get the 16-bit register directly
+            if (registers[reg16Name] !== undefined) {
+                return parseRegisterValue(registers[reg16Name]);
+            }
+            
+            // Try alternative name (e.g., AF_ instead of AF2)
+            if (altName && registers[altName] !== undefined) {
+                return parseRegisterValue(registers[altName]);
+            }
+            
+            // If 16-bit register not available, construct from 8-bit components
+            const high = parseRegisterValue(registers[highReg]);
+            const low = parseRegisterValue(registers[lowReg]);
+            
+            // Only build if both components are available
+            if (registers[highReg] !== undefined && registers[lowReg] !== undefined) {
+                return (high << 8) | low;
+            }
+            
+            return 0;
+        };
+
         // Standard Z80 register mapping according to Z80_REG enum
         // PC=0, SP=1, AF=2, BC=3, DE=4, HL=5, IX=6, IY=7, AF2=8, BC2=9, DE2=10, HL2=11, IR=12, IM=13
         regData[0] = parseRegisterValue(registers.PC);      // PC
         regData[1] = parseRegisterValue(registers.SP);      // SP
-        regData[2] = parseRegisterValue(registers.AF);      // AF
-        regData[3] = parseRegisterValue(registers.BC);      // BC  
-        regData[4] = parseRegisterValue(registers.DE);      // DE
-        regData[5] = parseRegisterValue(registers.HL);      // HL
+        
+        // Handle composite 16-bit registers - try 16-bit first, fall back to 8-bit construction
+        regData[2] = get16BitRegister('AF', 'A', 'F');      // AF
+        regData[3] = get16BitRegister('BC', 'B', 'C');      // BC  
+        regData[4] = get16BitRegister('DE', 'D', 'E');      // DE
+        regData[5] = get16BitRegister('HL', 'H', 'L');      // HL
         regData[6] = parseRegisterValue(registers.IX);      // IX
         regData[7] = parseRegisterValue(registers.IY);      // IY
-        regData[8] = parseRegisterValue(registers.AF2 || registers.AF_);  // AF'
-        regData[9] = parseRegisterValue(registers.BC2 || registers.BC_);  // BC'
-        regData[10] = parseRegisterValue(registers.DE2 || registers.DE_); // DE'
-        regData[11] = parseRegisterValue(registers.HL2 || registers.HL_); // HL'
+        
+        // Handle alternate registers - try different naming conventions
+        regData[8] = get16BitRegister('AF2', 'A2', 'F2', 'AF_');  // AF'
+        regData[9] = get16BitRegister('BC2', 'B2', 'C2', 'BC_');  // BC'
+        regData[10] = get16BitRegister('DE2', 'D2', 'E2', 'DE_'); // DE'
+        regData[11] = get16BitRegister('HL2', 'H2', 'L2', 'HL_'); // HL'
         
         // Handle I and R registers - they might be separate or combined
         const iValue = parseRegisterValue(registers.I);
@@ -424,6 +459,11 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
         
         // IM register
         regData[13] = parseRegisterValue(registers.IM);
+        
+        // Add slots data for TRS-80 (simple non-banking system)
+        // TRS-80 systems don't use memory banking, so we use a single slot covering full 64K
+        regData[14] = 1;  // Slot count
+        regData[15] = 0;  // Single slot with bank 0
         
         return regData;
     }
@@ -653,7 +693,7 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
 
     /**
      * Get the currently allocated port for this remote instance.
-     * This is the port that the TRS-80GP emulator is listening on.
+     * This is the port that the trs80gp emulator is listening on.
      * 
      * @returns The allocated port number, or 0 if no port is allocated
      */
@@ -666,7 +706,7 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
     }
 
     /**
-     * Check if the default TRS-80GP port (49152) is available.
+     * Check if the default trs80gp port (49152) is available.
      * This is useful before attempting to connect to determine if the emulator 
      * is likely running on the default port.
      * 
@@ -677,7 +717,7 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
     }
 
     /**
-     * Find an available port for TRS-80GP emulator connection.
+     * Find an available port for trs80gp emulator connection.
      * Searches from the preferred port (or default 49152) downward to find 
      * the first available port in the valid range.
      * 
@@ -690,17 +730,17 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
     }
 
     /**
-     * Validate that a port number is suitable for TRS-80GP emulator connections.
+     * Validate that a port number is suitable for trs80gp emulator connections.
      * 
      * @param port Port number to validate
-     * @returns True if the port is in the valid range for TRS-80GP
+     * @returns True if the port is in the valid range for trs80gp
      */
     public static isValidTrs80GpPort(port: number): boolean {
         return PortManager.isValidTrs80GpPort(port);
     }
 
     /**
-     * Get the default port number for TRS-80GP emulator (49152).
+     * Get the default port number for trs80gp emulator (49152).
      * 
      * @returns The default port number
      */

@@ -810,15 +810,18 @@ export class ZSimulationView extends BaseView {
 			<!-- Slots  2nd -->
 			`;
 
-			const slotRanges = this.simulator.memoryModel.slotRanges;
-			const count = slotRanges.length;
-			for (let i = 0; i < count; i++) {
-				const slotRange = slotRanges[i];
-				const pos = slotRange.start * 100 / 0x10000;
-				const width = (slotRange.end + 1 - slotRange.start) * 100 / 0x10000;
-				const add = `<div class="border" id="slot${i}_id" style="top:3.5em; left:${pos}%; width:${width}%; height: 2em;"></div>
+			const slotRanges = this.simulator.memoryModel?.slotRanges;
+			// Handle undefined memory model or simple memory models that don't have slotRanges (like TRS-80)
+			if (slotRanges && slotRanges.length > 0) {
+				const count = slotRanges.length;
+				for (let i = 0; i < count; i++) {
+					const slotRange = slotRanges[i];
+					const pos = slotRange.start * 100 / 0x10000;
+					const width = (slotRange.end + 1 - slotRange.start) * 100 / 0x10000;
+					const add = `<div class="border" id="slot${i}_id" style="top:3.5em; left:${pos}%; width:${width}%; height: 2em;"></div>
 			`;
-				html += add;
+					html += add;
+				}
 			}
 
 			html += `

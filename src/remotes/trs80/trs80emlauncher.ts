@@ -6,8 +6,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 /**
- * TRS-80GP Emulator Launcher
- * Handles launching the real TRS-80GP emulator with various command-line options
+ * trs80gp Emulator Launcher
+ * Handles launching the real trs80gp emulator with various command-line options
  * including model selection, memory size, disk images, cassette tapes, and 
  * serial interface configuration.
  */
@@ -26,7 +26,7 @@ export class Trs80EmulatorLauncher {
     }
 
     /**
-     * Launch the TRS-80GP emulator with configured options.
+     * Launch the trs80gp emulator with configured options.
      * @returns Promise that resolves when the emulator is ready for connection
      */
     public async launchEmulator(): Promise<void> {
@@ -34,7 +34,7 @@ export class Trs80EmulatorLauncher {
         
         // Check for auto-start disabled
         if (!emulatorConfig || !emulatorConfig.autoStart) {
-            LogTransport.log('TRS-80GP emulator auto-start disabled');
+            LogTransport.log('trs80gp emulator auto-start disabled');
             return;
         }
 
@@ -42,21 +42,21 @@ export class Trs80EmulatorLauncher {
     }
     
     /**
-     * Launch the real TRS-80GP emulator
+     * Launch the real trs80gp emulator
      */
     private async launchRealEmulator(): Promise<void> {
         const emulatorConfig = Settings.launch.trs80.emulator;
         
         if (!emulatorConfig || !emulatorConfig.path) {
-            throw new Error('TRS-80GP emulator path not configured');
+            throw new Error('trs80gp emulator path not configured');
         }
 
         // Check if emulator executable exists
         if (!fs.existsSync(emulatorConfig.path)) {
-            throw new Error(`TRS-80GP emulator not found at: ${emulatorConfig.path}`);
+            throw new Error(`trs80gp emulator not found at: ${emulatorConfig.path}`);
         }
 
-        LogTransport.log('Launching TRS-80GP emulator...');
+        LogTransport.log('Launching trs80gp emulator...');
 
         // Build command line arguments
         const args = this.buildCommandLineArgs(emulatorConfig);
@@ -83,15 +83,15 @@ export class Trs80EmulatorLauncher {
             // Wait for the emulator to start and be ready for connections
             await this.waitForEmulatorReady();
 
-            LogTransport.log('TRS-80GP emulator launched successfully');
+            LogTransport.log('trs80gp emulator launched successfully');
 
         } catch (error) {
-            throw new Error(`Failed to launch TRS-80GP emulator: ${error.message}`);
+            throw new Error(`Failed to launch trs80gp emulator: ${error.message}`);
         }
     }
 
     /**
-     * Build command line arguments for the TRS-80GP emulator.
+     * Build command line arguments for the trs80gp emulator.
      * @param config The emulator configuration
      * @returns Array of command line arguments
      */
@@ -186,14 +186,14 @@ export class Trs80EmulatorLauncher {
         if (!this.emulatorProcess) return;
 
         this.emulatorProcess.on('error', (error) => {
-            LogTransport.log(`TRS-80GP emulator process error: ${error.message}`);
+            LogTransport.log(`trs80gp emulator process error: ${error.message}`);
         });
 
         this.emulatorProcess.on('exit', (code, signal) => {
             if (code !== null) {
-                LogTransport.log(`TRS-80GP emulator exited with code: ${code}`);
+                LogTransport.log(`trs80gp emulator exited with code: ${code}`);
             } else if (signal) {
-                LogTransport.log(`TRS-80GP emulator terminated by signal: ${signal}`);
+                LogTransport.log(`trs80gp emulator terminated by signal: ${signal}`);
             }
             this.emulatorProcess = undefined;
         });
@@ -203,7 +203,7 @@ export class Trs80EmulatorLauncher {
             this.emulatorProcess.stdout.on('data', (data) => {
                 const output = data.toString().trim();
                 if (output) {
-                    LogTransport.log(`TRS-80GP stdout: ${output}`);
+                    LogTransport.log(`trs80gp stdout: ${output}`);
                 }
             });
         }
@@ -213,7 +213,7 @@ export class Trs80EmulatorLauncher {
             this.emulatorProcess.stderr.on('data', (data) => {
                 const output = data.toString().trim();
                 if (output) {
-                    LogTransport.log(`TRS-80GP stderr: ${output}`);
+                    LogTransport.log(`trs80gp stderr: ${output}`);
                 }
             });
         }
@@ -232,7 +232,7 @@ export class Trs80EmulatorLauncher {
 
         // Verify the process is still running
         if (!this.emulatorProcess || this.emulatorProcess.exitCode !== null) {
-            throw new Error('TRS-80GP emulator process terminated unexpectedly');
+            throw new Error('trs80gp emulator process terminated unexpectedly');
         }
     }
 
@@ -244,7 +244,7 @@ export class Trs80EmulatorLauncher {
             return;
         }
 
-        LogTransport.log('Terminating TRS-80GP emulator...');
+        LogTransport.log('Terminating trs80gp emulator...');
 
         return new Promise<void>((resolve) => {
             if (!this.emulatorProcess) {
@@ -255,7 +255,7 @@ export class Trs80EmulatorLauncher {
             const timeout = setTimeout(() => {
                 // Force kill if graceful termination fails
                 if (this.emulatorProcess && !this.emulatorProcess.killed) {
-                    LogTransport.log('Force killing TRS-80GP emulator...');
+                    LogTransport.log('Force killing trs80gp emulator...');
                     this.emulatorProcess.kill('SIGKILL');
                 }
                 resolve();
@@ -263,7 +263,7 @@ export class Trs80EmulatorLauncher {
 
             this.emulatorProcess.once('exit', () => {
                 clearTimeout(timeout);
-                LogTransport.log('TRS-80GP emulator terminated');
+                LogTransport.log('trs80gp emulator terminated');
                 this.emulatorProcess = undefined;
                 this.wasLaunchedByDeZog = false;
                 resolve();

@@ -1,7 +1,7 @@
 /**
- * Mock TRS-80GP Server
+ * Mock trs80gp Server
  * 
- * This implements a simple mock server that simulates the TRS-80GP emulator's JSON-RPC interface
+ * This implements a simple mock server that simulates the trs80gp emulator's JSON-RPC interface
  * for testing the DeZog debugger extension without requiring the actual emulator.
  */
 
@@ -62,6 +62,14 @@ class MockTRS80GPServer {
     private port: number;
     private emulatorState: TRS80GPState;
     private symbolsMap: Map<string, number> = new Map();
+    
+    // Configuration option to simulate different register formats
+    private use8BitRegistersOnly: boolean = false;
+    
+    // Configuration option to control how numbers are interpreted (hex vs decimal)
+    // true = interpret numbers as hex (regardless of 0x prefix)
+    // false = interpret numbers as decimal (unless 0x prefix is present)
+    private parseNumbersAsHex: boolean = true;
 
     /**
      * Initialize registers with random values according to the agreed-upon rules:
@@ -131,12 +139,12 @@ class MockTRS80GPServer {
 
     public start(): void {
         this.server.listen(this.port, () => {
-            console.log(`Mock TRS-80GP server listening on port ${this.port}`);
+            console.log(`Mock trs80gp server listening on port ${this.port}`);
         });
 
         this.server.on('error', (err: any) => {
             if (err.code === 'EADDRINUSE') {
-                console.error(`Port ${this.port} is already in use. Please ensure no other TRS-80GP mock server or process is using this port.`);
+                console.error(`Port ${this.port} is already in use. Please ensure no other trs80gp mock server or process is using this port.`);
                 console.error('You can check with: lsof -i :' + this.port);
                 process.exit(1);
             } else {
@@ -150,7 +158,7 @@ class MockTRS80GPServer {
         this.clients.forEach(client => client.destroy());
         this.clients = [];
         this.server.close(() => {
-            console.log('Mock TRS-80GP server stopped');
+            console.log('Mock trs80gp server stopped');
         });
     }
 
@@ -209,7 +217,7 @@ class MockTRS80GPServer {
                     jsonrpc: '2.0',
                     id: message.id,
                     result: {
-                        programName: 'Mock TRS-80GP',
+                        programName: 'Mock trs80gp',
                         version: '1.0.0',
                         modelName: 'TRS-80 Model I',
                         modelNumber: 1
@@ -271,15 +279,15 @@ class MockTRS80GPServer {
                     // Parse address (accept both number and hex string)
                     if (typeof message.params.address === 'number') {
                         address = message.params.address;
-                    } else if (typeof message.params.address === 'string' && message.params.address.startsWith('0x')) {
-                        address = parseInt(message.params.address.substring(2), 16);
+                    } else if (typeof message.params.address === 'string') {
+                        address = this.parseNumber(message.params.address);
                     } else {
                         response = {
                             jsonrpc: '2.0',
                             id: message.id,
                             error: {
                                 code: -32602,
-                                message: 'Invalid address format - must be a number or hex string (0xNNNN)'
+                                message: 'Invalid address format - must be a number or hex string'
                             }
                         };
                         break;
@@ -347,15 +355,15 @@ class MockTRS80GPServer {
                     // Parse address (accept both number and hex string)
                     if (typeof message.params.address === 'number') {
                         address = message.params.address;
-                    } else if (typeof message.params.address === 'string' && message.params.address.startsWith('0x')) {
-                        address = parseInt(message.params.address.substring(2), 16);
+                    } else if (typeof message.params.address === 'string') {
+                        address = this.parseNumber(message.params.address);
                     } else {
                         response = {
                             jsonrpc: '2.0',
                             id: message.id,
                             error: {
                                 code: -32602,
-                                message: 'Invalid address format - must be a number or hex string (0xNNNN)'
+                                message: 'Invalid address format - must be a number or hex string'
                             }
                         };
                         break;
@@ -507,9 +515,9 @@ class MockTRS80GPServer {
                 if (message.params && Array.isArray(message.params.breakpoints)) {
                     // Store breakpoints - support both hexadecimal strings and numbers
                     this.emulatorState.breakpoints = message.params.breakpoints.map((bp: Breakpoint) => {
-                        // If the address is provided as a hex string, convert it to a number
-                        if (typeof bp.address === 'string' && bp.address.startsWith('0x')) {
-                            return { address: parseInt(bp.address.substring(2), 16) };
+                        // If the address is provided as a string, parse it according to configuration
+                        if (typeof bp.address === 'string') {
+                            return { address: this.parseNumber(bp.address) };
                         }
                         return bp;
                     });
@@ -583,6 +591,57 @@ class MockTRS80GPServer {
                 }
                 break;
 
+            case 'configure':
+                if (message.params) {
+                    let updated = false;
+                    let updateMessages: string[] = [];
+                    
+                    if (typeof message.params.use8BitRegistersOnly === 'boolean') {
+                        this.use8BitRegistersOnly = message.params.use8BitRegistersOnly;
+                        updateMessages.push(`Register format: ${this.use8BitRegistersOnly ? '8-bit individual' : '16-bit composite'}`);
+                        updated = true;
+                    }
+                    
+                    if (typeof message.params.parseNumbersAsHex === 'boolean') {
+                        this.parseNumbersAsHex = message.params.parseNumbersAsHex;
+                        updateMessages.push(`Number parsing: ${this.parseNumbersAsHex ? 'hex (regardless of 0x prefix)' : 'decimal (unless 0x prefix)'}`);
+                        updated = true;
+                    }
+                    
+                    if (updated) {
+                        console.log(`Mock server configuration updated: ${updateMessages.join(', ')}`);
+                        
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            result: {
+                                use8BitRegistersOnly: this.use8BitRegistersOnly,
+                                parseNumbersAsHex: this.parseNumbersAsHex,
+                                message: `Configuration updated: ${updateMessages.join(', ')}`
+                            }
+                        };
+                    } else {
+                        response = {
+                            jsonrpc: '2.0',
+                            id: message.id,
+                            error: {
+                                code: -32602,
+                                message: 'Invalid params. Expected use8BitRegistersOnly (boolean) and/or parseNumbersAsHex (boolean)'
+                            }
+                        };
+                    }
+                } else {
+                    response = {
+                        jsonrpc: '2.0',
+                        id: message.id,
+                        error: {
+                            code: -32602,
+                            message: 'Invalid params for configure - use8BitRegistersOnly must be a boolean'
+                        }
+                    };
+                }
+                break;
+
             default:
                 response = {
                     jsonrpc: '2.0',
@@ -603,29 +662,83 @@ class MockTRS80GPServer {
 
     /**
      * Format register values as hexadecimal strings for protocol output
+     * Supports both 16-bit composite registers and 8-bit individual registers
+     * to test the robust register handling in convertTrs80GpRegistersToDeZog
      */
     private formatRegistersAsHex(): any {
         const regs = this.emulatorState.registers;
-        return {
-            A: `0x${regs.A.toString(16).toUpperCase().padStart(2, '0')}`,
-            F: `0x${regs.F.toString(16).toUpperCase().padStart(2, '0')}`,
-            B: `0x${regs.B.toString(16).toUpperCase().padStart(2, '0')}`,
-            C: `0x${regs.C.toString(16).toUpperCase().padStart(2, '0')}`,
-            D: `0x${regs.D.toString(16).toUpperCase().padStart(2, '0')}`,
-            E: `0x${regs.E.toString(16).toUpperCase().padStart(2, '0')}`,
-            H: `0x${regs.H.toString(16).toUpperCase().padStart(2, '0')}`,
-            L: `0x${regs.L.toString(16).toUpperCase().padStart(2, '0')}`,
-            IX: `0x${regs.IX.toString(16).toUpperCase().padStart(4, '0')}`,
-            IY: `0x${regs.IY.toString(16).toUpperCase().padStart(4, '0')}`,
-            SP: `0x${regs.SP.toString(16).toUpperCase().padStart(4, '0')}`,
-            PC: `0x${regs.PC.toString(16).toUpperCase().padStart(4, '0')}`,
-            I: `0x${regs.I.toString(16).toUpperCase().padStart(2, '0')}`,
-            R: `0x${regs.R.toString(16).toUpperCase().padStart(2, '0')}`,
-            AF_: `0x${regs.AF_.toString(16).toUpperCase().padStart(4, '0')}`,
-            BC_: `0x${regs.BC_.toString(16).toUpperCase().padStart(4, '0')}`,
-            DE_: `0x${regs.DE_.toString(16).toUpperCase().padStart(4, '0')}`,
-            HL_: `0x${regs.HL_.toString(16).toUpperCase().padStart(4, '0')}`
-        };
+        
+        if (this.use8BitRegistersOnly) {
+            // Provide only individual 8-bit registers to test fallback logic
+            return {
+                // Individual 8-bit registers only
+                A: `0x${regs.A.toString(16).toUpperCase().padStart(2, '0')}`,
+                F: `0x${regs.F.toString(16).toUpperCase().padStart(2, '0')}`,
+                B: `0x${regs.B.toString(16).toUpperCase().padStart(2, '0')}`,
+                C: `0x${regs.C.toString(16).toUpperCase().padStart(2, '0')}`,
+                D: `0x${regs.D.toString(16).toUpperCase().padStart(2, '0')}`,
+                E: `0x${regs.E.toString(16).toUpperCase().padStart(2, '0')}`,
+                H: `0x${regs.H.toString(16).toUpperCase().padStart(2, '0')}`,
+                L: `0x${regs.L.toString(16).toUpperCase().padStart(2, '0')}`,
+                
+                // 16-bit registers that cannot be decomposed
+                IX: `0x${regs.IX.toString(16).toUpperCase().padStart(4, '0')}`,
+                IY: `0x${regs.IY.toString(16).toUpperCase().padStart(4, '0')}`,
+                SP: `0x${regs.SP.toString(16).toUpperCase().padStart(4, '0')}`,
+                PC: `0x${regs.PC.toString(16).toUpperCase().padStart(4, '0')}`,
+                
+                // Individual 8-bit registers (I, R)
+                I: `0x${regs.I.toString(16).toUpperCase().padStart(2, '0')}`,
+                R: `0x${regs.R.toString(16).toUpperCase().padStart(2, '0')}`,
+                
+                // Alternate register set as individual 8-bit components
+                A2: `0x${((regs.AF_ >> 8) & 0xFF).toString(16).toUpperCase().padStart(2, '0')}`,
+                F2: `0x${(regs.AF_ & 0xFF).toString(16).toUpperCase().padStart(2, '0')}`,
+                B2: `0x${((regs.BC_ >> 8) & 0xFF).toString(16).toUpperCase().padStart(2, '0')}`,
+                C2: `0x${(regs.BC_ & 0xFF).toString(16).toUpperCase().padStart(2, '0')}`,
+                D2: `0x${((regs.DE_ >> 8) & 0xFF).toString(16).toUpperCase().padStart(2, '0')}`,
+                E2: `0x${(regs.DE_ & 0xFF).toString(16).toUpperCase().padStart(2, '0')}`,
+                H2: `0x${((regs.HL_ >> 8) & 0xFF).toString(16).toUpperCase().padStart(2, '0')}`,
+                L2: `0x${(regs.HL_ & 0xFF).toString(16).toUpperCase().padStart(2, '0')}`,
+                
+                // Interrupt mode (usually 0, 1, or 2)
+                IM: 0
+            };
+        } else {
+            // Provide 16-bit composite registers (existing behavior)
+            // Combine individual 8-bit registers into 16-bit composite values
+            const af = (regs.A << 8) | regs.F;
+            const bc = (regs.B << 8) | regs.C;
+            const de = (regs.D << 8) | regs.E;
+            const hl = (regs.H << 8) | regs.L;
+            
+            return {
+                // Composite 16-bit registers (main registers)
+                AF: `0x${af.toString(16).toUpperCase().padStart(4, '0')}`,
+                BC: `0x${bc.toString(16).toUpperCase().padStart(4, '0')}`,
+                DE: `0x${de.toString(16).toUpperCase().padStart(4, '0')}`,
+                HL: `0x${hl.toString(16).toUpperCase().padStart(4, '0')}`,
+                
+                // 16-bit index and pointer registers
+                IX: `0x${regs.IX.toString(16).toUpperCase().padStart(4, '0')}`,
+                IY: `0x${regs.IY.toString(16).toUpperCase().padStart(4, '0')}`,
+                SP: `0x${regs.SP.toString(16).toUpperCase().padStart(4, '0')}`,
+                PC: `0x${regs.PC.toString(16).toUpperCase().padStart(4, '0')}`,
+                
+                // Individual 8-bit registers (I, R)
+                I: `0x${regs.I.toString(16).toUpperCase().padStart(2, '0')}`,
+                R: `0x${regs.R.toString(16).toUpperCase().padStart(2, '0')}`,
+                
+                // Alternate register set (already 16-bit composite)
+                AF_: `0x${regs.AF_.toString(16).toUpperCase().padStart(4, '0')}`,
+                BC_: `0x${regs.BC_.toString(16).toUpperCase().padStart(4, '0')}`,
+                DE_: `0x${regs.DE_.toString(16).toUpperCase().padStart(4, '0')}`,
+                HL_: `0x${regs.HL_.toString(16).toUpperCase().padStart(4, '0')}`,
+                
+                // Interrupt mode (usually 0, 1, or 2)
+                IM: 0
+            };
+        }
     }
 
     private initializeMemory(): void {
@@ -654,6 +767,37 @@ class MockTRS80GPServer {
         // Add some symbols for testing
         this.symbolsMap.set("main", 0x6000);
         this.symbolsMap.set("hello_msg", 0x600C);
+    }
+
+    /**
+     * Toggle between 16-bit composite and 8-bit individual register modes
+     * This is useful for testing the robust register handling
+     */
+    public setUse8BitRegistersOnly(use8BitOnly: boolean): void {
+        this.use8BitRegistersOnly = use8BitOnly;
+        console.log(`Mock server configuration: Register mode: ${use8BitOnly ? '8-bit individual' : '16-bit composite'}, Number parsing: ${this.parseNumbersAsHex ? 'hex (regardless of 0x prefix)' : 'decimal (unless 0x prefix)'}`);
+    }
+
+    /**
+     * Parses a number string according to the parseNumbersAsHex configuration.
+     * @param numberStr The number string to parse (may or may not have 0x prefix)
+     * @returns The parsed number
+     */
+    private parseNumber(numberStr: string): number {
+        // Remove any 0x prefix if present
+        const cleanStr = numberStr.replace(/^0x/i, '');
+        
+        if (this.parseNumbersAsHex) {
+            // Parse as hex regardless of prefix
+            return parseInt(cleanStr, 16);
+        } else {
+            // Parse as decimal unless original had 0x prefix
+            if (numberStr.toLowerCase().startsWith('0x')) {
+                return parseInt(cleanStr, 16);
+            } else {
+                return parseInt(cleanStr, 10);
+            }
+        }
     }
 }
 
