@@ -177,20 +177,20 @@ export interface Trs80Type {
 	/// The socket timeout in seconds.
 	socketTimeout: number;
 
-	// When true, uses the internal mock server instead of connecting to a real TRS-80GP emulator.
+	// When true, uses the internal mock server instead of connecting to a real trs80gp emulator.
 	// This is useful for testing/development without requiring the actual emulator.
 	useMock?: boolean;
 
 	// Register format: 'hex' (default) or 'decimal'. 
-	// Determines how register values are parsed from the TRS-80GP protocol.
+	// Determines how register values are parsed from the trs80gp protocol.
 	// The mock server always outputs hexadecimal format.
 	registerFormat?: 'hex' | 'decimal';
 
-	// TRS-80GP emulator launch configuration
+	// trs80gp emulator launch configuration
 	emulator?: Trs80EmulatorConfig;
 }
 
-// TRS-80GP emulator launch configuration
+// trs80gp emulator launch configuration
 export interface Trs80EmulatorConfig {
 	// Path to trs80gp executable
 	path: string;

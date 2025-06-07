@@ -1,0 +1,12 @@
+Mock trs80gp server listening on port 49152
+Client connected: ::1:51865
+Received message: {"jsonrpc":"2.0","method":"init","params":{},"id":1749323615566}
+Sending response: {"jsonrpc":"2.0","id":1749323615566,"error":{"code":-32601,"message":"Method not found: init"}}
+Received message: {"jsonrpc":"2.0","method":"getRegisters","params":{},"id":1749323615567}
+Sending response: {"jsonrpc":"2.0","id":1749323615567,"result":{"AF":"0x0843","BC":"0x00CE","DE":"0x3EDD","HL":"0x4AF3","IX":"0x0000","IY":"0x0000","SP":"0xFFDF","PC":"0x6000","I":"0x00","R":"0x00","AF_":"0xF7BC","BC_":"0xFF31","DE_":"0xC122","HL_":"0xB50C","IM":0}}
+Received message: {"jsonrpc":"2.0","method":"configure","params":{"use8BitRegistersOnly":true},"id":1749323615568}
+Mock server register mode changed to: 8-bit individual
+Sending response: {"jsonrpc":"2.0","id":1749323615568,"result":{"use8BitRegistersOnly":true,"message":"Register format changed to 8-bit individual"}}
+Received message: {"jsonrpc":"2.0","method":"getRegisters","params":{},"id":1749323615568}
+Sending response: {"jsonrpc":"2.0","id":1749323615568,"result":{"A":"0x08","F":"0x43","B":"0x00","C":"0xCE","D":"0x3E","E":"0xDD","H":"0x4A","L":"0xF3","IX":"0x0000","IY":"0x0000","SP":"0xFFDF","PC":"0x6000","I":"0x00","R":"0x00","A2":"0xF7","F2":"0xBC","B2":"0xFF","C2":"0x31","D2":"0xC1","E2":"0x22","H2":"0xB5","L2":"0x0C","IM":0}}
+Client disconnected: ::1:51865
