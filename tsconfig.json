@@ -13,5 +13,12 @@
 		"preserveConstEnums": true,
 		"strictNullChecks": true,
 		"noUnusedParameters": false
-	}
+	},
+	"exclude": [
+		"src/3rdparty/**/*.js",
+		"**/*.js"
+	],
+	"include": [
+		"src/**/*.ts"
+	]
 }

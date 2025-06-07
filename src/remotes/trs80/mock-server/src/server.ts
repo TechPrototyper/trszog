@@ -134,8 +134,15 @@ class MockTRS80GPServer {
             console.log(`Mock TRS-80GP server listening on port ${this.port}`);
         });
 
-        this.server.on('error', (err) => {
-            console.error(`Server error: ${err.message}`);
+        this.server.on('error', (err: any) => {
+            if (err.code === 'EADDRINUSE') {
+                console.error(`Port ${this.port} is already in use. Please ensure no other TRS-80GP mock server or process is using this port.`);
+                console.error('You can check with: lsof -i :' + this.port);
+                process.exit(1);
+            } else {
+                console.error(`Server error: ${err.message}`);
+                process.exit(1);
+            }
         });
     }
 

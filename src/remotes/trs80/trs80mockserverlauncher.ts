@@ -4,8 +4,8 @@ import * as fs from 'fs';
 import {Utility} from '../../misc/utility';
 
 /**
- * TRS-80GP Mock Server Launcher
- * Handles launching and managing the mock TRS-80GP server for development and testing.
+ * trs80gp Mock Server Launcher
+ * Handles launching and managing the mock trs80gp server for development and testing.
  */
 export class Trs80MockServerLauncher {
     private mockServerProcess: ChildProcess | undefined;
@@ -49,7 +49,7 @@ export class Trs80MockServerLauncher {
     }
 
     /**
-     * Start the TRS-80GP mock server.
+     * Start the trs80gp mock server.
      * @returns Promise that resolves when the server is ready
      */
     public async start(): Promise<void> {
@@ -61,13 +61,16 @@ export class Trs80MockServerLauncher {
         const packageJsonPath = path.join(this.mockServerPath, 'package.json');
 
         if (!fs.existsSync(packageJsonPath)) {
-            throw new Error(`TRS-80GP mock server not found at: ${this.mockServerPath}`);
+            throw new Error(`trs80gp mock server not found at: ${this.mockServerPath}`);
         }
 
         // Build the mock server if needed
         if (!fs.existsSync(serverScriptPath)) {
             await this.buildMockServer();
         }
+
+        // Check if port is already in use and try to free it
+        await this.ensurePortAvailable();
 
         // Start the mock server process
         return new Promise((resolve, reject) => {
@@ -102,7 +105,16 @@ export class Trs80MockServerLauncher {
             this.mockServerProcess.on('exit', (code: number | null) => {
                 if (!serverReady) {
                     console.error(`[TRS-80GP Mock] Process exited before server was ready (exit code: ${code})`);
-                    reject(new Error(`TRS-80GP mock server failed to start (exit code: ${code})`));
+                    
+                    // Provide helpful error messages based on exit code
+                    let errorMessage = `trs80gp mock server failed to start (exit code: ${code})`;
+                    if (code === 1) {
+                        errorMessage += '. This usually indicates a port conflict. Please ensure port ' + this.mockServerPort + ' is not in use by another process.';
+                    } else if (code === 0) {
+                        errorMessage += '. The server exited normally but never became ready. This might indicate a port conflict or missing dependencies.';
+                    }
+                    
+                    reject(new Error(errorMessage));
                 } else {
                     console.log(`[TRS-80GP Mock] Server stopped (exit code: ${code})`);
                 }
@@ -112,7 +124,7 @@ export class Trs80MockServerLauncher {
             // Handle process errors
             this.mockServerProcess.on('error', (error: Error) => {
                 if (!serverReady) {
-                    reject(new Error(`Failed to start TRS-80GP mock server: ${error.message}`));
+                    reject(new Error(`Failed to start trs80gp mock server: ${error.message}`));
                 } else {
                     console.error(`[TRS-80GP Mock] Process error: ${error.message}`);
                 }
@@ -123,14 +135,14 @@ export class Trs80MockServerLauncher {
                 if (!serverReady) {
                     console.error('[TRS-80GP Mock] Server startup timeout');
                     this.stop();
-                    reject(new Error('TRS-80GP mock server startup timeout'));
+                    reject(new Error('trs80gp mock server startup timeout'));
                 }
             }, 15000); // Increased to 15 second timeout
         });
     }
 
     /**
-     * Stop the TRS-80GP mock server.
+     * Stop the trs80gp mock server.
      */
     public stop(): void {
         if (this.mockServerProcess) {
@@ -190,6 +202,105 @@ export class Trs80MockServerLauncher {
             buildProcess.on('error', (error: Error) => {
                 reject(new Error(`Failed to build mock server: ${error.message}`));
             });
+        });
+    }
+
+    /**
+     * Ensure the mock server port is available by killing any existing processes using it.
+     */
+    private async ensurePortAvailable(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Check what's using the port
+            const lsofProcess = spawn('lsof', ['-i', `:${this.mockServerPort}`], {
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+
+            let output = '';
+            lsofProcess.stdout?.on('data', (data: Buffer) => {
+                output += data.toString();
+            });
+
+            lsofProcess.on('exit', (code: number | null) => {
+                if (code === 0 && output.trim()) {
+                    // Port is in use, try to kill the processes
+                    console.log(`[TRS-80GP Mock] Port ${this.mockServerPort} is in use, attempting to free it...`);
+                    this.killProcessesOnPort(output)
+                        .then(() => {
+                            console.log(`[TRS-80GP Mock] Port ${this.mockServerPort} freed successfully`);
+                            resolve();
+                        })
+                        .catch((error) => {
+                            console.error(`[TRS-80GP Mock] Failed to free port ${this.mockServerPort}: ${error.message}`);
+                            // Continue anyway, let the server startup handle the port conflict
+                            resolve();
+                        });
+                } else {
+                    // Port is free or lsof failed
+                    resolve();
+                }
+            });
+
+            lsofProcess.on('error', (error: Error) => {
+                // lsof command failed, continue anyway
+                console.log(`[TRS-80GP Mock] Could not check port status: ${error.message}`);
+                resolve();
+            });
+        });
+    }
+
+    /**
+     * Kill processes that are using the mock server port.
+     */
+    private async killProcessesOnPort(lsofOutput: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Parse lsof output to find PIDs
+            const lines = lsofOutput.split('\n');
+            const pids: string[] = [];
+            
+            for (const line of lines) {
+                if (line.includes('node') && line.includes(`:${this.mockServerPort}`)) {
+                    const parts = line.split(/\s+/);
+                    if (parts.length > 1) {
+                        const pid = parts[1];
+                        if (pid && /^\d+$/.test(pid)) {
+                            pids.push(pid);
+                        }
+                    }
+                }
+            }
+
+            if (pids.length === 0) {
+                resolve();
+                return;
+            }
+
+            console.log(`[TRS-80GP Mock] Killing processes: ${pids.join(', ')}`);
+            
+            // Kill all found processes
+            const killPromises = pids.map(pid => {
+                return new Promise<void>((killResolve) => {
+                    const killProcess = spawn('kill', ['-9', pid], {
+                        stdio: ['ignore', 'pipe', 'pipe']
+                    });
+                    
+                    killProcess.on('exit', () => {
+                        console.log(`[TRS-80GP Mock] Killed process ${pid}`);
+                        killResolve();
+                    });
+                    
+                    killProcess.on('error', () => {
+                        console.log(`[TRS-80GP Mock] Process ${pid} already dead or inaccessible`);
+                        killResolve();
+                    });
+                });
+            });
+
+            Promise.all(killPromises)
+                .then(() => {
+                    // Wait a moment for ports to be freed
+                    setTimeout(() => resolve(), 1000);
+                })
+                .catch(reject);
         });
     }
 }
