@@ -449,7 +449,7 @@ export interface SmartDisassemblerArgs {
  */
 export interface SettingsParameters extends DebugProtocol.LaunchRequestArguments {
 	/// The remote type: zesarux or zxnext.
-	remoteType: 'zrcp' | 'cspect' | 'zxnext' | 'zsim' | 'mame' | 'trs80' | 'trs80gp';
+	remoteType: 'zrcp' | 'cspect' | 'zxnext' | 'zsim' | 'mame' | 'trs80gp';
 
 	// The special settings for zrcp (ZEsarux).
 	zrcp: ZrcpType;

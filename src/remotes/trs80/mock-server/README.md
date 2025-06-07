@@ -47,7 +47,7 @@ Example configuration:
     "type": "dezog",
     "request": "launch",
     "name": "TRS-80 (Mock)",
-    "remoteType": "trs80",
+    "remoteType": "trs80gp",
     "trs80": {
         "hostname": "localhost",
         "port": 49152,
