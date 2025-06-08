@@ -6,6 +6,16 @@ import {PortManager} from './portmanager';
 import {Z80RegistersStandardDecoder} from '../z80registersstandarddecoder';
 import {Z80Registers} from '../z80registers';
 import {MemoryModelTrs80Model1, MemoryModelTrs80Model3} from '../MemoryModel/trs80memorymodels';
+import * as fs from 'fs';
+
+/**
+ * Gets a timestamp string for logging.
+ */
+function getTimestamp(): string {
+    const now = new Date();
+    const ms = now.getMilliseconds().toString().padStart(3, '0');
+    return `${now.toTimeString().split(' ')[0]}.${ms}`;
+}
 
 /**
  * JSON-RPC message interface for communication with trs80gp emulator.
@@ -47,6 +57,93 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
     // Buffer for accumulating incoming data
     private dataBuffer = '';
     
+    // Conversation log file handle for protocol debugging
+    private conversationLogFile: number | undefined;
+    private conversationLogPath: string | undefined;
+    
+    /**
+     * Creates a clean, professional hex dump with proper formatting and ASCII representation.
+     * Features:
+     * - Fixed 80-character lines with ~26 hex bytes per line
+     * - ASCII representation with escape sequences for control characters
+               * - Clean output without ANSI escape sequences
+     * - Error highlighting when errors occur in the data
+     */
+    public createHexDump(data: Buffer | string, prefix: string = '', hasError: boolean = false): string {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
+        const lines: string[] = [];
+        const bytesPerLine = 16; // Standard hex dump format
+        
+        for (let i = 0; i < buffer.length; i += bytesPerLine) {
+            const slice = buffer.slice(i, i + bytesPerLine);
+            
+            // Create hex representation
+            const hexBytes = Array.from(slice)
+                .map(byte => byte.toString(16).padStart(2, '0').toUpperCase())
+                .join(' ');
+            
+            // Pad hex bytes to consistent width (47 chars for 16 bytes)
+            const paddedHex = hexBytes.padEnd(47, ' ');
+            
+            // Create ASCII representation with escape sequences for known control chars
+            const asciiChars = Array.from(slice)
+                .map(byte => {
+                    if (byte >= 32 && byte <= 126) {
+                        return String.fromCharCode(byte);
+                    }
+                    // Show common control characters as escape sequences
+                    switch (byte) {
+                        case 0x00: return '\\0';
+                        case 0x07: return '\\a';
+                        case 0x08: return '\\b';
+                        case 0x09: return '\\t';
+                        case 0x0A: return '\\n';
+                        case 0x0B: return '\\v';
+                        case 0x0C: return '\\f';
+                        case 0x0D: return '\\r';
+                        case 0x1B: return '\\e';
+                        default: return '.';
+                    }
+                })
+                .join('');
+            
+            // Create offset (address)
+            const offset = i.toString(16).padStart(8, '0').toUpperCase();
+            
+            // Format line with consistent spacing
+            const line = `${prefix}${offset}: ${paddedHex} |${asciiChars}|`;
+            
+            // Add error indicator if this dump contains error data
+            if (hasError) {
+                lines.push(`${line} << ERROR`);
+            } else {
+                lines.push(line);
+            }
+        }
+        
+        return lines.join('\n');
+    }
+
+    /**
+     * Creates a clean summary of communication data for console output.
+     * Shows just the essential information without cluttering the debug console.
+     */
+    public createDataSummary(data: Buffer | string, direction: 'SENT' | 'RECEIVED'): string {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
+        const dataString = buffer.toString('utf8');
+        
+        // Clean up the string for display (remove excessive whitespace, newlines)
+        const cleanString = dataString.replace(/\s+/g, ' ').trim();
+        
+        // Truncate if too long
+        const maxLength = 200;
+        const displayString = cleanString.length > maxLength 
+            ? cleanString.substring(0, maxLength) + '...'
+            : cleanString;
+        
+        return `${direction} (${buffer.length} bytes): ${displayString}`;
+    }
+
     /**
      * Constructor.
      */
@@ -54,6 +151,80 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
         super();
         this.socket = new Socket();
         this.setupSocketHandlers();
+        this.initConversationLog();
+    }
+
+    /**
+     * Initialize the conversation log file for protocol debugging.
+     * Creates a binary log file with timestamp that can be analyzed with hex dumpers.
+     */
+    private initConversationLog(): void {
+        try {
+            // Create log filename with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            this.conversationLogPath = `trs80gp-conversation-${timestamp}.log`;
+            
+            // Create the log file
+            this.conversationLogFile = fs.openSync(this.conversationLogPath, 'w');
+            
+            // Write header with session information
+            const header = `TRS-80 GP Protocol Conversation Log\nSession started: ${new Date().toISOString()}\n\n`;
+            fs.writeSync(this.conversationLogFile, Buffer.from(header, 'utf8'));
+            
+            console.log(`[TRS80GP] Conversation log initialized: ${this.conversationLogPath}`);
+        } catch (error) {
+            console.warn(`[TRS80GP] Failed to initialize conversation log: ${error.message}`);
+            this.conversationLogFile = undefined;
+            this.conversationLogPath = undefined;
+        }
+    }
+
+    /**
+     * Log protocol data to the conversation log file.
+     * Records raw data with timestamp and direction markers for analysis.
+     */
+    public logToConversationFile(data: Buffer, direction: 'SEND' | 'RECV'): void {
+        if (!this.conversationLogFile) {
+            return;
+        }
+        
+        try {
+            const timestamp = new Date().toISOString();
+            const header = `\n=== ${direction} ${timestamp} (${data.length} bytes) ===\n`;
+            
+            // Write header
+            fs.writeSync(this.conversationLogFile, Buffer.from(header, 'utf8'));
+            
+            // Write raw data
+            fs.writeSync(this.conversationLogFile, data);
+            
+            // Write separator
+            fs.writeSync(this.conversationLogFile, Buffer.from('\n', 'utf8'));
+            
+            // Ensure data is written to disk
+            fs.fsyncSync(this.conversationLogFile);
+        } catch (error) {
+            console.warn(`[TRS80GP] Failed to write to conversation log: ${error.message}`);
+        }
+    }
+
+    /**
+     * Close the conversation log file.
+     */
+    private closeConversationLog(): void {
+        if (this.conversationLogFile) {
+            try {
+                const footer = `\nSession ended: ${new Date().toISOString()}\n`;
+                fs.writeSync(this.conversationLogFile, Buffer.from(footer, 'utf8'));
+                fs.closeSync(this.conversationLogFile);
+                console.log(`[TRS80GP] Conversation log closed: ${this.conversationLogPath}`);
+            } catch (error) {
+                console.warn(`[TRS80GP] Failed to close conversation log: ${error.message}`);
+            } finally {
+                this.conversationLogFile = undefined;
+                this.conversationLogPath = undefined;
+            }
+        }
     }
 
     /**
@@ -61,7 +232,9 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      */
     private setupSocketHandlers(): void {
         this.socket.on('connect', () => {
-            this.emit('debug_console', 'Connected to trs80gp emulator');
+            const timestamp = getTimestamp();
+            console.log(`[${timestamp}] [TRS80GP] Socket connected successfully`);
+            this.emit('debug_console', `[${timestamp}] Connected to trs80gp emulator`);
         });
 
         this.socket.on('data', (data: Buffer) => {
@@ -69,12 +242,16 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
         });
 
         this.socket.on('error', (err: Error) => {
-            this.emit('debug_console', `Socket error: ${err.message}`);
-            this.emit('warning', `trs80gp connection error: ${err.message}`);
+            const timestamp = getTimestamp();
+            console.log(`[${timestamp}] [TRS80GP] Socket error: ${err.message}`);
+            this.emit('debug_console', `[${timestamp}] Socket error: ${err.message}`);
+            this.emit('warning', `[${timestamp}] trs80gp connection error: ${err.message}`);
         });
 
         this.socket.on('close', () => {
-            this.emit('debug_console', 'Disconnected from trs80gp emulator');
+            const timestamp = getTimestamp();
+            console.log(`[${timestamp}] [TRS80GP] Socket closed`);
+            this.emit('debug_console', `[${timestamp}] Disconnected from trs80gp emulator`);
         });
     }
 
@@ -82,7 +259,26 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      * Handle incoming socket data and parse JSON-RPC messages.
      */
     private handleSocketData(data: Buffer): void {
-        this.dataBuffer += data.toString();
+        const timestamp = getTimestamp();
+        const dataString = data.toString();
+        
+        // Log to conversation file for protocol debugging
+        this.logToConversationFile(data, 'RECV');
+        
+        // Create clean hex dump for detailed console output
+        const hexDump = this.createHexDump(data, '    ');
+        
+        // Create summary for VS Code debug console (cleaner)
+        const dataSummary = this.createDataSummary(data, 'RECEIVED');
+        
+        // Console output with full hex dump for development
+        console.log(`[${timestamp}] [TRS80GP] RECEIVED (${data.length} bytes):`);
+        console.log(hexDump);
+        
+        // VS Code debug console output (cleaner)
+        this.emit('debug_console', `[${timestamp}] ${dataSummary}`);
+        
+        this.dataBuffer += dataString;
         
         // Process complete JSON-RPC messages (newline-delimited)
         let newlineIndex;
@@ -95,7 +291,10 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
                     const message: JsonRpcMessage = JSON.parse(messageStr);
                     this.handleJsonRpcMessage(message);
                 } catch (err) {
-                    this.emit('debug_console', `Failed to parse JSON-RPC message: ${messageStr}`);
+                    console.log(`[${timestamp}] [TRS80GP] JSON PARSE ERROR: ${err.message}`);
+                    console.log(`[${timestamp}] [TRS80GP] RAW MESSAGE: ${JSON.stringify(messageStr)}`);
+                    this.emit('debug_console', `[${timestamp}] Failed to parse JSON-RPC message: ${messageStr}`);
+                    this.emit('debug_console', `[${timestamp}] Parse error: ${err.message}`);
                 }
             }
         }
@@ -105,29 +304,34 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      * Handle a parsed JSON-RPC message.
      */
     private handleJsonRpcMessage(message: JsonRpcMessage): void {
-        console.log(`[TRS80GP] Received JSON-RPC message: ${JSON.stringify(message)}`);
-        this.emit('debug_console', `Received JSON-RPC: ${message.method || 'response'}`);
+        const timestamp = getTimestamp();
+        console.log(`[${timestamp}] [TRS80GP] PARSED JSON-RPC: ${JSON.stringify(message)}`);
+        this.emit('debug_console', `[${timestamp}] PARSED JSON-RPC: ${message.method || 'response'} (id: ${message.id})`);
         
         if (message.id !== undefined) {
             // This is a response to a request we sent
             const pending = this.pendingRequests.get(message.id as number);
             if (pending) {
-                console.log(`[TRS80GP] Found pending request for id: ${message.id}`);
+                console.log(`[${timestamp}] [TRS80GP] Found pending request for id: ${message.id}`);
                 this.pendingRequests.delete(message.id as number);
                 
                 if (message.error) {
-                    console.log(`[TRS80GP] Error response: ${JSON.stringify(message.error)}`);
+                    console.log(`[${timestamp}] [TRS80GP] Error response: ${JSON.stringify(message.error)}`);
+                    this.emit('debug_console', `[${timestamp}] Error response: ${JSON.stringify(message.error)}`);
                     pending.reject(new Error(`JSON-RPC error ${message.error.code}: ${message.error.message}`));
                 } else {
-                    console.log(`[TRS80GP] Success response: ${JSON.stringify(message.result)}`);
+                    console.log(`[${timestamp}] [TRS80GP] Success response: ${JSON.stringify(message.result)}`);
+                    this.emit('debug_console', `[${timestamp}] Success response: ${JSON.stringify(message.result)}`);
                     pending.resolve(message.result);
                 }
             } else {
-                console.log(`[TRS80GP] No pending request found for id: ${message.id}`);
+                console.log(`[${timestamp}] [TRS80GP] No pending request found for id: ${message.id}`);
+                this.emit('debug_console', `[${timestamp}] No pending request found for id: ${message.id}`);
             }
         } else if (message.method) {
             // This is a notification/event from the emulator
-            console.log(`[TRS80GP] Handling notification: ${message.method}`);
+            console.log(`[${timestamp}] [TRS80GP] Handling notification: ${message.method}`);
+            this.emit('debug_console', `[${timestamp}] Handling notification: ${message.method}`);
             this.handleTrs80GpNotification(message.method, message.params);
         }
     }
@@ -164,20 +368,36 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
                 id
             };
 
-            console.log(`[TRS80GP] Sending JSON-RPC request: ${JSON.stringify(message)}`);
-            this.emit('debug_console', `Sending JSON-RPC request: ${method} with id ${id}`);
+            const messageStr = JSON.stringify(message) + '\n';
+            const messageBuffer = Buffer.from(messageStr, 'utf8');
+            
+            const timestamp = getTimestamp();
+            
+            // Log to conversation file for protocol debugging
+            this.logToConversationFile(messageBuffer, 'SEND');
+            
+            // Create clean hex dump for detailed console output
+            const hexDump = this.createHexDump(messageBuffer, '    ');
+            
+            // Create summary for VS Code debug console (cleaner)
+            const dataSummary = this.createDataSummary(messageBuffer, 'SENT');
+            
+            // Console output with full hex dump for development
+            console.log(`[${timestamp}] [TRS80GP] SENDING (${messageBuffer.length} bytes):`);
+            console.log(hexDump);
+            
+            // VS Code debug console output (cleaner)
+            this.emit('debug_console', `[${timestamp}] ${dataSummary}`);
             
             this.pendingRequests.set(id, {resolve, reject});
-            
-            const messageStr = JSON.stringify(message) + '\n';
-            this.socket.write(messageStr);
+            this.socket.write(messageBuffer);
 
             // Set a timeout for the request
             setTimeout(() => {
                 if (this.pendingRequests.has(id)) {
                     this.pendingRequests.delete(id);
-                    console.log(`[TRS80GP] Request timeout for method: ${method}, id: ${id}`);
-                    this.emit('debug_console', `Request timeout for method: ${method}, id: ${id}`);
+                    console.log(`[${timestamp}] [TRS80GP] Request timeout for method: ${method}, id: ${id}`);
+                    this.emit('debug_console', `[${timestamp}] Request timeout for method: ${method}, id: ${id}`);
                     reject(new Error(`trs80gp JSON-RPC request timeout for method: ${method}`));
                 }
             }, 5000); // 5 second timeout
@@ -189,6 +409,9 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      */
     public async connectSocket(): Promise<void> {
         const hostname = Settings.launch.trs80?.hostname || 'localhost';
+        const timestamp = getTimestamp();
+        
+        console.log(`[${timestamp}] [TRS80GP] Starting connection to ${hostname}`);
         
         // Use configured port if available, otherwise find an available port
         let port: number;
@@ -199,32 +422,45 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
             const isAvailable = await PortManager.isPortAvailable(configuredPort);
             if (isAvailable) {
                 port = configuredPort;
-                this.emit('debug_console', `Using configured port: ${port}`);
+                console.log(`[${timestamp}] [TRS80GP] Using configured port: ${port}`);
+                this.emit('debug_console', `[${timestamp}] Using configured port: ${port}`);
             } else {
-                this.emit('warning', `Configured port ${configuredPort} is busy, searching for alternative...`);
+                console.log(`[${timestamp}] [TRS80GP] Configured port ${configuredPort} is busy, searching for alternative...`);
+                this.emit('warning', `[${timestamp}] Configured port ${configuredPort} is busy, searching for alternative...`);
                 port = await PortManager.findAvailablePort(configuredPort);
-                this.emit('debug_console', `Using alternative port: ${port}`);
+                console.log(`[${timestamp}] [TRS80GP] Using alternative port: ${port}`);
+                this.emit('debug_console', `[${timestamp}] Using alternative port: ${port}`);
             }
         } else {
             // Find an available port starting from the default
             port = await PortManager.findAvailablePort();
-            this.emit('debug_console', `Auto-allocated port: ${port}`);
+            console.log(`[${timestamp}] [TRS80GP] Auto-allocated port: ${port}`);
+            this.emit('debug_console', `[${timestamp}] Auto-allocated port: ${port}`);
         }
         
         this.allocatedPort = port;
 
         return new Promise((resolve, reject) => {
+            const connectTimestamp = getTimestamp();
+            console.log(`[${connectTimestamp}] [TRS80GP] Attempting to connect to ${hostname}:${port}`);
+            
             const timeout = setTimeout(() => {
+                const timeoutTimestamp = getTimestamp();
+                console.log(`[${timeoutTimestamp}] [TRS80GP] Connection timeout to ${hostname}:${port}`);
                 reject(new Error(`Connection timeout to trs80gp at ${hostname}:${port}`));
             }, 5000);
 
             this.socket.connect(port, hostname, () => {
                 clearTimeout(timeout);
+                const successTimestamp = getTimestamp();
+                console.log(`[${successTimestamp}] [TRS80GP] Successfully connected to ${hostname}:${port}`);
                 resolve();
             });
 
             this.socket.on('error', (err) => {
                 clearTimeout(timeout);
+                const errorTimestamp = getTimestamp();
+                console.log(`[${errorTimestamp}] [TRS80GP] Connection error: ${err.message}`);
                 reject(err);
             });
         });
@@ -357,6 +593,8 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
         if (this.socket) {
             this.socket.destroy();
         }
+        // Close conversation log file
+        this.closeConversationLog();
     }
 
     /**
