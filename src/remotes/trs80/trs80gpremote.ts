@@ -145,6 +145,63 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
     }
 
     /**
+     * Creates a compact hex dump for debug console output.
+     * Shows 64 bytes per line with hex values and ASCII representation in 3-line format.
+     * Format: 
+     * Position: 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F 20 21 22 23 24 25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 3D 3E 3F
+     * Hex:      7B 22 6A 73 6F 6E 72 70 63 22 3A 22 32 2E 30 22 2C 22 6D 65 74 68 6F 64 22 3A 22 69 6E 69 74 69 61 6C 69 7A 65 22 2C 22 70 61 72 61 6D 73 22 3A 7B 22 63 6C 69 65 6E 74 4E 61 6D 65 22 3A 22
+     * ASCII:    {  "  j  s  o  n  r  p  c  "  :  "  2  .  0  "  ,  "  m  e  t  h  o  d  "  :  "  i  n  i  t  i  a  l  i  z  e  "  ,  "  p  a  r  a  m  s  "  :  {  "  c  l  i  e  n  t  N  a  m  e  "  :  "
+     */
+    public createCompactHexDump(data: Buffer | string, direction: 'SENT' | 'RECV'): string {
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
+        const lines: string[] = [];
+        const bytesPerLine = 64; // 64 bytes per line as requested
+        
+        for (let i = 0; i < buffer.length; i += bytesPerLine) {
+            const slice = buffer.slice(i, i + bytesPerLine);
+            
+            // Create position line (00 01 02 03 ...)
+            const positions = Array.from(slice, (_, index) => 
+                (i + index).toString(16).padStart(2, '0').toUpperCase()
+            ).join(' ');
+            
+            // Create hex representation with spaces
+            const hexBytes = Array.from(slice)
+                .map(byte => byte.toString(16).padStart(2, '0').toUpperCase())
+                .join(' ');
+            
+            // Create ASCII representation with escape sequences for control characters
+            const asciiChars = Array.from(slice)
+                .map(byte => {
+                    if (byte >= 32 && byte <= 126) {
+                        return String.fromCharCode(byte).padEnd(3, ' '); // Pad to 3 chars for alignment
+                    }
+                    // Show escape sequences for common control characters
+                    switch (byte) {
+                        case 0x07: return '\\a '; // bell
+                        case 0x08: return '\\b '; // backspace
+                        case 0x09: return '\\t '; // tab
+                        case 0x0A: return '\\n '; // newline
+                        case 0x0B: return '\\v '; // vertical tab
+                        case 0x0C: return '\\f '; // form feed
+                        case 0x0D: return '\\r '; // carriage return
+                        case 0x1B: return '\\e '; // escape
+                        default: return '   '; // 3 spaces for non-printable
+                    }
+                })
+                .join('');
+            
+            // Add the three-line format with proper alignment
+            lines.push(''); // Empty line to separate blocks
+            lines.push(`${direction}: ${positions}`);
+            lines.push(`      ${hexBytes}`);
+            lines.push(`      ${asciiChars}`);
+        }
+        
+        return lines.join('\n');
+    }
+
+    /**
      * Constructor.
      */
     constructor() {
@@ -265,18 +322,16 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
         // Log to conversation file for protocol debugging
         this.logToConversationFile(data, 'RECV');
         
-        // Create clean hex dump for detailed console output
-        const hexDump = this.createHexDump(data, '    ');
-        
-        // Create summary for VS Code debug console (cleaner)
-        const dataSummary = this.createDataSummary(data, 'RECEIVED');
+        // Create compact hex dump for debug console
+        const compactHexDump = this.createCompactHexDump(data, 'RECV');
         
         // Console output with full hex dump for development
         console.log(`[${timestamp}] [TRS80GP] RECEIVED (${data.length} bytes):`);
-        console.log(hexDump);
+        console.log(this.createHexDump(data, '    '));
         
-        // VS Code debug console output (cleaner)
-        this.emit('debug_console', `[${timestamp}] ${dataSummary}`);
+        // VS Code debug console output with compact hex dump
+        this.emit('debug_console', `[${timestamp}] RECEIVED (${data.length} bytes):`);
+        this.emit('debug_console', compactHexDump);
         
         this.dataBuffer += dataString;
         
@@ -295,6 +350,10 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
                     console.log(`[${timestamp}] [TRS80GP] RAW MESSAGE: ${JSON.stringify(messageStr)}`);
                     this.emit('debug_console', `[${timestamp}] Failed to parse JSON-RPC message: ${messageStr}`);
                     this.emit('debug_console', `[${timestamp}] Parse error: ${err.message}`);
+                    
+                    // Create visual error display for JSON parse errors
+                    const errorDisplay = this.createJsonParseErrorDisplay(messageStr, err);
+                    console.log(errorDisplay);
                 }
             }
         }
@@ -379,15 +438,16 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
             // Create clean hex dump for detailed console output
             const hexDump = this.createHexDump(messageBuffer, '    ');
             
-            // Create summary for VS Code debug console (cleaner)
-            const dataSummary = this.createDataSummary(messageBuffer, 'SENT');
+            // Create compact hex dump for debug console
+            const compactHexDump = this.createCompactHexDump(messageBuffer, 'SENT');
             
             // Console output with full hex dump for development
             console.log(`[${timestamp}] [TRS80GP] SENDING (${messageBuffer.length} bytes):`);
             console.log(hexDump);
             
-            // VS Code debug console output (cleaner)
-            this.emit('debug_console', `[${timestamp}] ${dataSummary}`);
+            // VS Code debug console output with compact hex dump
+            this.emit('debug_console', `[${timestamp}] SENDING (${messageBuffer.length} bytes):`);
+            this.emit('debug_console', compactHexDump);
             
             this.pendingRequests.set(id, {resolve, reject});
             this.socket.write(messageBuffer);
@@ -1033,5 +1093,158 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
      */
     public static getDefaultPort(): number {
         return PortManager.getDefaultPort();
+    }
+
+    /**
+     * Creates a visual error display for JSON parse errors with highlighted problematic characters.
+     * Shows the error location with inverse/colored highlighting and expected content if possible.
+     */
+    private createJsonParseErrorDisplay(message: string, error: Error): string {
+        const lines: string[] = [];
+        
+        // Extract position information from JavaScript JSON.parse error
+        const errorMessage = error.message;
+        let position = -1;
+        let expectedInfo = '';
+        
+        // Try to extract position from error message
+        const positionMatch = errorMessage.match(/position\s+(\d+)/i);
+        if (positionMatch) {
+            position = parseInt(positionMatch[1], 10);
+        }
+        
+        // Extract expected information if available
+        if (errorMessage.includes('Unexpected token')) {
+            const tokenMatch = errorMessage.match(/Unexpected token (.+?) in JSON/);
+            if (tokenMatch) {
+                expectedInfo = `Unexpected token: ${tokenMatch[1]}`;
+            }
+        }
+        
+        lines.push(`JSON Parse Error: ${errorMessage}`);
+        lines.push(`Message length: ${message.length} characters`);
+        
+        if (position >= 0 && position < message.length) {
+            lines.push('');
+            lines.push('Error location highlighted:');
+            
+            // Create hex dump with error highlighting
+            const messageBuffer = Buffer.from(message, 'utf8');
+            const hexErrorDisplay = this.createErrorHighlightedHexDump(messageBuffer, position);
+            lines.push(hexErrorDisplay);
+            
+            // Create text display with error highlighting
+            const textErrorDisplay = this.createErrorHighlightedText(message, position);
+            lines.push('');
+            lines.push('Text representation:');
+            lines.push(textErrorDisplay);
+            
+            // Show context around the error
+            const contextStart = Math.max(0, position - 20);
+            const contextEnd = Math.min(message.length, position + 20);
+            const context = message.substring(contextStart, contextEnd);
+            const relativePos = position - contextStart;
+            
+            lines.push('');
+            lines.push('Context (±20 chars):');
+            lines.push(`"${context}"`);
+            lines.push(' '.repeat(relativePos + 1) + '^-- Error here');
+        }
+        
+        if (expectedInfo) {
+            lines.push('');
+            lines.push(`Expected: Valid JSON syntax`);
+            lines.push(`Analysis: ${expectedInfo}`);
+        }
+        
+        // Add suggestions based on common JSON errors
+        lines.push('');
+        lines.push('Common causes:');
+        lines.push('• Missing quotes around string values');
+        lines.push('• Trailing commas in objects/arrays');
+        lines.push('• Unescaped characters in strings');
+        lines.push('• Incomplete JSON message (fragmented transmission)');
+        
+        return lines.join('\n');
+    }
+
+    /**
+     * Creates a hex dump with the error position highlighted using ANSI escape codes.
+     */
+    private createErrorHighlightedHexDump(buffer: Buffer, errorPosition: number): string {
+        const lines: string[] = [];
+        const bytesPerLine = 16;
+        
+        for (let i = 0; i < buffer.length; i += bytesPerLine) {
+            const slice = buffer.slice(i, i + bytesPerLine);
+            const lineStart = i;
+            const lineEnd = i + slice.length - 1;
+            
+            // Check if error position is in this line
+            const hasError = errorPosition >= lineStart && errorPosition <= lineEnd;
+            const errorOffset = hasError ? errorPosition - lineStart : -1;
+            
+            // Create hex representation with highlighting
+            const hexParts: string[] = [];
+            for (let j = 0; j < slice.length; j++) {
+                const byte = slice[j];
+                const hexStr = byte.toString(16).padStart(2, '0').toUpperCase();
+                
+                if (j === errorOffset) {
+                    // Highlight the error byte - use ANSI inverse video
+                    hexParts.push(`\x1b[7m${hexStr}\x1b[0m`);
+                } else {
+                    hexParts.push(hexStr);
+                }
+            }
+            
+            // Pad hex representation
+            const hexLine = hexParts.join(' ').padEnd(47, ' ');
+            
+            // Create ASCII representation with highlighting
+            const asciiParts: string[] = [];
+            for (let j = 0; j < slice.length; j++) {
+                const byte = slice[j];
+                let char: string;
+                
+                if (byte >= 32 && byte <= 126) {
+                    char = String.fromCharCode(byte);
+                } else {
+                    char = '.';
+                }
+                
+                if (j === errorOffset) {
+                    // Highlight the error character
+                    asciiParts.push(`\x1b[7m${char}\x1b[0m`);
+                } else {
+                    asciiParts.push(char);
+                }
+            }
+            
+            const asciiLine = asciiParts.join('');
+            const offset = i.toString(16).padStart(8, '0').toUpperCase();
+            
+            lines.push(`    ${offset}: ${hexLine} |${asciiLine}|`);
+        }
+        
+        return lines.join('\n');
+    }
+
+    /**
+     * Creates a text representation with the error position highlighted.
+     */
+    private createErrorHighlightedText(text: string, errorPosition: number): string {
+        if (errorPosition < 0 || errorPosition >= text.length) {
+            return `"${text}"`;
+        }
+        
+        const before = text.substring(0, errorPosition);
+        const errorChar = text.charAt(errorPosition);
+        const after = text.substring(errorPosition + 1);
+        
+        // Use ANSI inverse video for highlighting
+        const highlightedChar = `\x1b[7m${errorChar === '' ? ' ' : errorChar}\x1b[0m`;
+        
+        return `"${before}${highlightedChar}${after}"`;
     }
 }
