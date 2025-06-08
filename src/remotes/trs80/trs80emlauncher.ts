@@ -103,71 +103,69 @@ export class Trs80EmulatorLauncher {
             args.push(`-m${config.model}`);
         }
 
-        // Memory size configuration
+        // Memory size configuration (-mem)
         if (config.memorySize) {
             args.push('-mem', config.memorySize.toString());
         }
 
-        // Disk image mounting
-        if (config.drive0) {
+        // Enable remote debugging interface (-remote @port)
+        const port = Settings.launch.trs80?.port || 49152;
+        args.push('-remote', `@${port}`);
+        LogTransport.log(`TRS-80: Adding remote debugging on port ${port}`);
+
+        // Disk image mounting (-d0, -d1)
+        if (config.diskImages?.drive0) {
             // Resolve relative paths
-            const drive0Path = path.isAbsolute(config.drive0) ? 
-                config.drive0 : 
-                path.resolve(Utility.getRootPath(), config.drive0);
+            const drive0Path = path.isAbsolute(config.diskImages.drive0) ? 
+                config.diskImages.drive0 : 
+                path.resolve(Utility.getRootPath(), config.diskImages.drive0);
             
             if (fs.existsSync(drive0Path)) {
-                args.push('-disk0', drive0Path);
+                args.push('-d0', drive0Path);
+                LogTransport.log(`TRS-80: Mounting drive 0: ${drive0Path}`);
             } else {
                 LogTransport.log(`Warning: Drive 0 disk image not found: ${drive0Path}`);
             }
         }
 
-        if (config.drive1) {
-            const drive1Path = path.isAbsolute(config.drive1) ? 
-                config.drive1 : 
-                path.resolve(Utility.getRootPath(), config.drive1);
+        if (config.diskImages?.drive1) {
+            const drive1Path = path.isAbsolute(config.diskImages.drive1) ? 
+                config.diskImages.drive1 : 
+                path.resolve(Utility.getRootPath(), config.diskImages.drive1);
             
             if (fs.existsSync(drive1Path)) {
-                args.push('-disk1', drive1Path);
+                args.push('-d1', drive1Path);
+                LogTransport.log(`TRS-80: Mounting drive 1: ${drive1Path}`);
             } else {
                 LogTransport.log(`Warning: Drive 1 disk image not found: ${drive1Path}`);
             }
         }
 
-        // Cassette tape loading
-        if (config.cassette) {
-            const cassettePath = path.isAbsolute(config.cassette) ? 
-                config.cassette : 
-                path.resolve(Utility.getRootPath(), config.cassette);
+        // Cassette tape loading (-c)
+        if (config.cassetteImage) {
+            const cassettePath = path.isAbsolute(config.cassetteImage) ? 
+                config.cassetteImage : 
+                path.resolve(Utility.getRootPath(), config.cassetteImage);
             
             if (fs.existsSync(cassettePath)) {
-                args.push('-cassette', cassettePath);
+                args.push('-c', cassettePath);
+                LogTransport.log(`TRS-80: Loading cassette: ${cassettePath}`);
             } else {
                 LogTransport.log(`Warning: Cassette tape file not found: ${cassettePath}`);
             }
         }
 
-        // Symbols file loading
+        // Symbols file loading (-ls)
         if (config.symbolsFile) {
             const symbolsPath = path.isAbsolute(config.symbolsFile) ? 
                 config.symbolsFile : 
                 path.resolve(Utility.getRootPath(), config.symbolsFile);
             
             if (fs.existsSync(symbolsPath)) {
-                args.push('-symbols', symbolsPath);
+                args.push('-ls', symbolsPath);
+                LogTransport.log(`TRS-80: Loading symbols: ${symbolsPath}`);
             } else {
                 LogTransport.log(`Warning: Symbols file not found: ${symbolsPath}`);
-            }
-        }
-
-        // Enable serial/JSON-RPC interface for debugging
-        if (config.enableSerial) {
-            args.push('-serial');
-            
-            // Add port if specified in TRS-80 configuration
-            const port = Settings.launch.trs80?.port;
-            if (port) {
-                args.push('-port', port.toString());
             }
         }
 
@@ -309,9 +307,9 @@ export class Trs80EmulatorLauncher {
 
         // Validate file paths if specified
         const filePaths = [
-            { path: config.drive0, name: 'drive0' },
-            { path: config.drive1, name: 'drive1' },
-            { path: config.cassette, name: 'cassette' },
+            { path: config.diskImages?.drive0, name: 'drive0' },
+            { path: config.diskImages?.drive1, name: 'drive1' },
+            { path: config.cassetteImage, name: 'cassette' },
             { path: config.symbolsFile, name: 'symbolsFile' }
         ];
 

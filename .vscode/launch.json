@@ -7,7 +7,6 @@
 			"request": "launch",
 			"runtimeExecutable": "${execPath}",
 			"args": [
-				//"--disable-extensions",
 				"--extensionDevelopmentPath=${workspaceFolder}"
 			],
 			"debugWebviews": true,
@@ -25,19 +24,17 @@
 			"name": "TRS-80 Model 1 (Mock)",
 			"remoteType": "trs80gp",
 			"trs80": {
-				"hostname": "localhost",
-				"port": 49152,
 				"useMock": true,
 				"registerFormat": "hex"
 			},
-			"sjasmplus": [
+			"zmac": [
 				{
-					"path": "${workspaceFolder}/test-trs80/test-program.sld"
+					"path": "${workspaceFolder}/test-trs80/test-program.bds"
 				}
 			],
 			"startAutomatically": false,
 			"rootFolder": "${workspaceFolder}",
-			"topOfStack": 65535,
+			"topOfStack": "65535",
 			"load": "${workspaceFolder}/test-trs80/test-program.cmd"
 		},
 		{
@@ -47,22 +44,64 @@
 			"remoteType": "trs80gp",
 			"trs80": {
 				"hostname": "localhost",
-				"port": 49153,
+				"port": 49152,
 				"useMock": true,
 				"registerFormat": "hex",
 				"emulator": {
 					"model": 3
 				}
 			},
-			"sjasmplus": [
+			"zmac": [
 				{
-					"path": "${workspaceFolder}/test-trs80/test-program.sld"
+					"path": "${workspaceFolder}/test-trs80/test-program.bds"
 				}
 			],
 			"startAutomatically": false,
 			"rootFolder": "${workspaceFolder}",
-			"topOfStack": 65535,
+			"topOfStack": "65535",
 			"load": "${workspaceFolder}/test-trs80/test-program.cmd"
+		},
+		{
+			"type": "dezog",
+			"request": "launch",
+			"name": "TRS-80 Model 3 - Real Emulator",
+			"remoteType": "trs80gp",
+			"trs80": {
+				"machine": "model3",
+				"port": 49152,
+				"hostname": "localhost",
+				"emulator": {
+					"autoStart": true,
+					"model": 3,
+					"memorySize": 48
+				}
+			},
+			"toolsPaths": {
+				"trs80gp": ".dev-tools/trs80gp.app/Contents/MacOS/trs80gp"
+			},
+			"startAutomatically": true,
+			"rootFolder": "${workspaceFolder}"
+		},
+		{
+			"type": "dezog",
+			"request": "launch", 
+			"name": "TRS-80 Model 1 - Real Emulator",
+			"remoteType": "trs80gp",
+			"trs80": {
+				"machine": "model1",
+				"port": 49152,
+				"hostname": "localhost",
+				"emulator": {
+					"autoStart": true,
+					"model": 1,
+					"memorySize": 48
+				}
+			},
+			"toolsPaths": {
+				"trs80gp": ".dev-tools/trs80gp.app/Contents/MacOS/trs80gp"
+			},
+			"startAutomatically": true,
+			"rootFolder": "${workspaceFolder}"
 		}
 	]
 }

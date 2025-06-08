@@ -5,6 +5,7 @@ import {Trs80MockServerLauncher} from './trs80mockserverlauncher';
 import {Settings} from '../../settings/settings';
 import {LogTransport} from '../../log';
 import {RemoteBase} from '../remotebase';
+import {Utility} from '../../misc/utility';
 import * as fs from 'fs';
 
 /**
@@ -70,10 +71,98 @@ export class Trs80Remote extends RemoteBase {
      * Determine if we should use the mock server based on configuration
      */
     private shouldUseMockServer(): boolean {
-        // Use mock if explicitly configured in settings
-        if (Settings.launch.trs80?.useMock === true) {
-            LogTransport.log('TRS-80: Using mock server (explicitly configured)');
+        // Check explicit useMock setting first
+        const useMockSetting = Settings.launch.trs80?.useMock;
+        if (useMockSetting === true) {
+            LogTransport.log('TRS-80: Using mock server (explicitly configured useMock=true)');
             return true;
+        }
+        
+        // If useMock is explicitly false, try to use real emulator
+        if (useMockSetting === false) {
+            LogTransport.log('TRS-80: Attempting to use real emulator (useMock=false)');
+            
+            // Check for toolsPaths.trs80gp configuration first
+            const toolsPaths = (Settings.launch as any).toolsPaths;
+            if (toolsPaths && toolsPaths.trs80gp) {
+                const emulatorPath = toolsPaths.trs80gp;
+                // Resolve relative paths against the workspace folder
+                const absoluteEmulatorPath = Utility.getAbsFilePath(emulatorPath, Settings.launch.rootFolder);
+                if (fs.existsSync(absoluteEmulatorPath)) {
+                    LogTransport.log(`TRS-80: Using real emulator from toolsPaths: ${absoluteEmulatorPath}`);
+                    // Update the emulator configuration with the absolute path
+                    if (!Settings.launch.trs80) {
+                        Settings.launch.trs80 = {
+                            hostname: 'localhost',
+                            port: 49152,
+                            socketTimeout: 5
+                        };
+                    }
+                    if (!Settings.launch.trs80.emulator) {
+                        Settings.launch.trs80.emulator = {
+                            path: absoluteEmulatorPath,
+                            model: 1 as const  // Default to Model I
+                        };
+                    } else {
+                        // Update existing emulator config with the absolute path
+                        Settings.launch.trs80.emulator.path = absoluteEmulatorPath;
+                    }
+                    return false;
+                } else {
+                    LogTransport.log(`TRS-80: toolsPaths emulator not found: ${absoluteEmulatorPath} (from relative path: ${emulatorPath})`);
+                }
+            }
+            
+            // Check regular emulator path
+            const emulatorConfig = Settings.launch.trs80?.emulator;
+            if (emulatorConfig && emulatorConfig.path) {
+                // Resolve relative paths against the workspace folder
+                const absoluteEmulatorPath = Utility.getAbsFilePath(emulatorConfig.path, Settings.launch.rootFolder);
+                if (fs.existsSync(absoluteEmulatorPath)) {
+                    LogTransport.log(`TRS-80: Using real emulator from emulator config: ${absoluteEmulatorPath}`);
+                    return false;
+                } else {
+                    LogTransport.log(`TRS-80: Emulator config path not found: ${absoluteEmulatorPath} (from relative path: ${emulatorConfig.path})`);
+                }
+            }
+            
+            // useMock=false but no valid emulator found - force error instead of falling back to mock
+            throw new Error('useMock=false but no valid emulator found. Check toolsPaths.trs80gp or emulator.path configuration.');
+        }
+        
+        // useMock not specified, use auto-detection logic
+        LogTransport.log('TRS-80: Auto-detecting emulator vs mock server...');
+        
+        // Check for toolsPaths.trs80gp configuration first
+        const toolsPaths = (Settings.launch as any).toolsPaths;
+        if (toolsPaths && toolsPaths.trs80gp) {
+            const emulatorPath = toolsPaths.trs80gp;
+            // Resolve relative paths against the workspace folder
+            const absoluteEmulatorPath = Utility.getAbsFilePath(emulatorPath, Settings.launch.rootFolder);
+            if (fs.existsSync(absoluteEmulatorPath)) {
+                LogTransport.log(`TRS-80: Using real emulator from toolsPaths: ${absoluteEmulatorPath}`);
+                // Update the emulator configuration with the absolute path
+                if (!Settings.launch.trs80) {
+                    Settings.launch.trs80 = {
+                        hostname: 'localhost',
+                        port: 49152,
+                        socketTimeout: 5
+                    };
+                }
+                if (!Settings.launch.trs80.emulator) {
+                    Settings.launch.trs80.emulator = {
+                        path: absoluteEmulatorPath,
+                        model: 1 as const  // Default to Model I
+                    };
+                } else {
+                    // Update existing emulator config with the absolute path
+                    Settings.launch.trs80.emulator.path = absoluteEmulatorPath;
+                }
+                return false;
+            } else {
+                LogTransport.log(`TRS-80: Using mock server (toolsPaths emulator not found: ${absoluteEmulatorPath} from relative path: ${emulatorPath})`);
+                return true;
+            }
         }
         
         // If no emulator path provided or it doesn't exist, use mock
@@ -83,12 +172,16 @@ export class Trs80Remote extends RemoteBase {
             return true;
         }
         
-        if (!fs.existsSync(emulatorConfig.path)) {
-            LogTransport.log(`TRS-80: Using mock server (emulator path not found: ${emulatorConfig.path})`);
+        // Resolve relative paths against the workspace folder
+        const absoluteEmulatorPath = Utility.getAbsFilePath(emulatorConfig.path, Settings.launch.rootFolder);
+        if (!fs.existsSync(absoluteEmulatorPath)) {
+            LogTransport.log(`TRS-80: Using mock server (emulator path not found: ${absoluteEmulatorPath} from relative path: ${emulatorConfig.path})`);
             return true;
         }
         
-        // Use real emulator
+        // Use real emulator - update config with absolute path
+        LogTransport.log(`TRS-80: Using real emulator: ${absoluteEmulatorPath}`);
+        emulatorConfig.path = absoluteEmulatorPath;
         return false;
     }
 

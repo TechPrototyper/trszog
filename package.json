@@ -38,7 +38,7 @@
 		"watch-tsc": "tsc -w -p ./",
 		"test": "mocha -u tdd \"out/**/*.test{s,}.js\" --exit",
 		"vscode:prepublish": "npm run esbuild-node -- --minify && npm run esbuild-browser -- --minify",
-		"esbuild-node": "esbuild ./src/extension.ts --bundle --outdir=out --external:vscode --external:@serialport --external:jsonc-parser --external:node-graphviz --external:ms --format=cjs --platform=node",
+		"esbuild-node": "esbuild ./src/extension.ts --bundle --outdir=out --external:vscode --external:@serialport --external:jsonc-parser --external:node-graphviz --external:ms --format=cjs --platform=node --keep-names --tree-shaking=false",
 		"esbuild-browser": "esbuild ./src/remotes/zsimulator/zsimwebview/main.ts --bundle --outdir=out --outbase=src --platform=browser",
 		"watch-node": "npm run esbuild-node -- --sourcemap --watch",
 		"watch-browser": "npm run esbuild-browser -- --sourcemap --watch",
@@ -1352,6 +1352,32 @@
 							"unitTestTimeout": {
 								"type": "number",
 								"description": "(Optional) The timeout for unit tests. If a test lasts longer it is assumed as failed. In secs. Default = 5s."
+							},
+							"toolsPaths": {
+								"description": "Configuration for external tool paths (trs80gp, zmac, sjasmplus, etc.). If not specified, tools are assumed to be in the system PATH.",
+								"type": "object",
+								"properties": {
+									"trs80gp": {
+										"type": "string",
+										"description": "Path to trs80gp emulator executable. If not specified, assumes trs80gp is in the system PATH."
+									},
+									"zmac": {
+										"type": "string",
+										"description": "Path to zmac assembler executable. If not specified, assumes zmac is in the system PATH."
+									},
+									"sjasmplus": {
+										"type": "string",
+										"description": "Path to sjasmplus assembler executable. If not specified, assumes sjasmplus is in the system PATH."
+									},
+									"z80asm": {
+										"type": "string",
+										"description": "Path to z80asm assembler executable. If not specified, assumes z80asm is in the system PATH."
+									},
+									"z88dk": {
+										"type": "string",
+										"description": "Path to z88dk tools directory. If not specified, assumes z88dk tools are in the system PATH."
+									}
+								}
 							}
 						}
 					}
