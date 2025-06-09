@@ -275,6 +275,7 @@ export class Trs80Remote extends RemoteBase {
     public async sendDzrpCmdSetRegister(regIndex: number, value: number) { return this.modelRemote.sendDzrpCmdSetRegister(regIndex, value); }
     public async sendDzrpCmdWriteMem(address: number, data: Uint8Array) { return this.modelRemote.sendDzrpCmdWriteMem(address, data); }
     public async sendDzrpCmdReadMem(address: number, size: number) { return this.modelRemote.sendDzrpCmdReadMem(address, size); }
+    public async readMemoryDump(addr64k: number, size: number) { return this.modelRemote.readMemoryDump(addr64k, size); }
     public async sendDzrpCmdContinue() { return this.modelRemote.sendDzrpCmdContinue(); }
     public async sendDzrpCmdPause() { return this.modelRemote.sendDzrpCmdPause(); }
     public async sendDzrpCmdStepOver() { return this.modelRemote.sendDzrpCmdStepOver(); }
