@@ -24,7 +24,7 @@ interface Breakpoint {
     address: number | string;
 }
 
-interface TRS80GPState {
+interface Trs80gpState {
     // CPU Registers
     registers: {
         A: number;
@@ -56,11 +56,11 @@ interface TRS80GPState {
     paused: boolean;
 }
 
-class MockTRS80GPServer {
+class MockTrs80gpServer {
     private server: net.Server;
     private clients: net.Socket[] = [];
     private port: number;
-    private emulatorState: TRS80GPState;
+    private emulatorState: Trs80gpState;
     private symbolsMap: Map<string, number> = new Map();
     
     // Configuration option to simulate different register formats
@@ -803,4 +803,4 @@ class MockTRS80GPServer {
 
 // Start the server with command-line port argument or default 49152
 const port = process.argv.length > 2 ? parseInt(process.argv[2], 10) : 49152;
-new MockTRS80GPServer(port).start();
+new MockTrs80gpServer(port).start();

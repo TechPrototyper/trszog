@@ -1,5 +1,5 @@
 
-import * as assert from 'assert';
+import assert from 'assert';
 import {suite, test, setup} from 'mocha';
 import {RemoteBase} from '../src/remotes/remotebase';
 import {Settings} from '../src/settings/settings';
