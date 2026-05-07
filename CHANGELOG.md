@@ -1,9 +1,11 @@
 # Changelog
 
+# 3.7.3
+- #180 Fixed L2_LOADING_SCREEN_SIZE
+
 # 3.7.2
 - Switched to es2024
 - Updated packages
-- #180 Fixed L2_LOADING_SCREEN_SIZE
 
 # 3.7.1
 - #168: zx81 standard ula display now recognizes "jp (hl)" as end-of-screen
