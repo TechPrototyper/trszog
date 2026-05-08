@@ -1,7 +1,7 @@
 # Changelog
 
 # 3.7.3
-- #180 Fixed L2_LOADING_SCREEN_SIZE
+- #180 Fixed L2_LOADING_SCREEN_SIZE in nex loading
 
 # 3.7.2
 - Switched to es2024
