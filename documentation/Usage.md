@@ -1466,7 +1466,7 @@ Furthermore the debugger program requires 8 bytes on the debugged program's stac
 
 So take care to use a stack that can hold these additional bytes at any time.
 
-B) Memory Paging
+B1) Memory Paging.
 The ZX Next SW Breakpoints do not work very well with memory paging.
 If you place a breakpoint in your source file the address for the source file line is taken and a breakpoint is put at that address.
 If at this moment a bank is paged in that does not correspondent to the source file a breakpoint is placed in the wrong bank.
@@ -1481,6 +1481,8 @@ Therefore you need to place the breakpoints carefully if you are placing them in
 Furthermore you should note that all breakpoints are put in just before a debugger step or continue and removed afterwards.
 I.e. if you have a "stale" breakpoint in some file it could make problems if this location changes the used bank.
 
+B2) Memory Paging.
+The SW breakpoints are implemented through `RST 0`. DeZog uses a changed ROM code to handle the "RST 0/SW breakpoints". This means: you have to take care not to change the slot 0, keeping the ROM in slot 0. Or, at least, make sure that whenever a breakpoint is hit, the ROM is paged to slot 0. (In other words: you can page in something else, run your code, but at the end you need to switch back ROM to slot 0 before the next breakpoint is hit.)
 
 C) As SW breakpoints replace the code at the breakpoint address you cannot place any SW breakpoint inside ROM code.
 
