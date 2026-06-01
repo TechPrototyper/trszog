@@ -495,7 +495,7 @@ For 'watching' C-variables you need to prefix the variable with a "_".
 E.g. for `my_global_var` in C you would need to enter `_my_global_var` in the WATCH window.
 If the size of the variable is not recognized correctly you can append it after the variable name, e.g. `_my_global_var,2` for a word-sized variable.
 Arrays can be viewed by appending the number of elements.
-`my_global_var,2,10` for example would show 10 elements, each word-sized.
+`_my_global_var,2,10` for example would show 10 elements, each word-sized.
 
 Notes:
 - C-support only works for "z88dkv2" not for "z88dk"
