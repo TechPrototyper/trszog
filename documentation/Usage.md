@@ -482,8 +482,6 @@ zcc +zxn -subtype=nex -vn --list -m --c-code-in-asm -clib=sdcc_iy -Cz"--clean" -
 ]
 ~~~
 
-Please note: C-support is only working with sdcc, not with sccz80.
-
 Top of stack:
 In launch.json you can set the `topOfStack` to the z88dk label `__register_sp` to set the stack for evaluation in DeZog.
 ~~~json
@@ -501,10 +499,12 @@ Arrays can be viewed by appending the number of elements.
 
 Notes:
 - C-support only works for "z88dkv2" not for "z88dk"
+- C-support is only working with sdcc, not with sccz80.
 - For the "path" you can use globbing
 - Top of stack: In launch.json you can set the `topOfStack` to the z88dk label `__register_sp` to set the stack for evaluation in DeZog.
 - Although z88dk can create object code for banked memory, the .map and .lis files lack this information. As a consequence, DeZog can not use any banking with z88dk. You will be able to debug such programs, but it may happen that DeZog cannot correctly associate files with program addresses because e.g. the 0xC000 might be used by several banks. This results in wrong display of files when stepping or breakpoints that cannot be set.
 - Not all C-code may have corresponding addresses in assembler code. I.e. for those lines you cannot set breakpoints. Try to set the breakpoint at some other line in the vicinity.
+- z88dk generated C-source code line references are not very accurate or even wrong in some cases. This may result in inaccurate stepping. Please see [#167-comment](https://github.com/maziac/DeZog/issues/167#issuecomment-4586450764) for more details.
 
 **Reverse Engineering configuration**
 
