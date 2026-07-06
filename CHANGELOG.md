@@ -1,5 +1,8 @@
 # Changelog
 
+# 3.7.4
+- PR #193: Fixed bug where pressing 'stop' would sometimes take 5 seconds to disconnect. (mame)
+
 # 3.7.3
 - #180 Fixed L2_LOADING_SCREEN_SIZE in nex loading
 
