@@ -641,7 +641,7 @@ The following table gives an overview.
 | ASSERTION support                     | yes    | yes     | yes 6)  | yes 6) | yes 6) |
 | WPMEM (Watchpoints) support           | yes    | yes 2)  | no      | no     | yes    |
 | LOGPOINT support                      | yes    | no      | yes 6)  | yes 6) | yes 6) |
-| Long addresses/breakpoints            | yes    | yes     | yes     | yes    | yes    |
+| Banking support                       | yes    | yes     | yes     | yes    | no     |
 | Extended callstack                    | no     | yes     | no      | no     | no     |
 | Code coverage                         | yes    | yes 1)  | no      | no     | no     |
 | Reverse debugging                     | true   | true    | lite    | lite   | lite   |
