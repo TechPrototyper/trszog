@@ -81,13 +81,13 @@ export class Trs80Model1Remote extends Trs80GpRemote {
     /**
      * Load a /CMD file for Model 1.
      * CMD files have a specific format with load address and execution address.
+     * This method uses the base class loadBinCmd implementation which parses
+     * the CMD file internally and uses JSON-RPC writeMemoryRequest.
      */
     public async sendDzrpCmdLoadObj(filePath: string): Promise<void> {
         try {
-            await this.sendTrs80GpJsonRpcRequest('loadCmd', {
-                filePath: filePath,
-                machineType: 'model1'
-            });
+            // Use the base class loadBinCmd implementation
+            await this.loadBinCmd(filePath);
         } catch (err) {
             throw new Error(`Failed to load CMD file on TRS-80 Model 1: ${err.message}`);
         }

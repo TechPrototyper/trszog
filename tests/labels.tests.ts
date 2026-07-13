@@ -15,7 +15,7 @@ import {Utility} from '../src/misc/utility';
 
 suite('Labels', () => {
 
-	beforeEach(() => {
+	setup(() => {
 		// To work with simpler file names
 		(Utility as any).rootPath = undefined;
 	});

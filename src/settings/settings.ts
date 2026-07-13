@@ -574,6 +574,11 @@ export class Settings {
 	 * @returns An "enhanced" launchCfg. E.g. default values are set.
 	 */
 	static Init(launchCfg: SettingsParameters): SettingsParameters {
+		console.log(`[Settings.Init] ===== SETTINGS INIT START =====`);
+		console.log(`[Settings.Init] Input launchCfg keys: ${Object.keys(launchCfg || {})}`);
+		console.log(`[Settings.Init] Input launchCfg.zmac: ${JSON.stringify(launchCfg?.zmac, null, 2)}`);
+		console.log(`[Settings.Init] Full input launchCfg: ${JSON.stringify(launchCfg, null, 2)}`);
+		
 		if (!launchCfg) {
 			launchCfg = {
 				remoteType: <any>undefined,
@@ -1076,11 +1081,23 @@ export class Settings {
 
 		// zmac
 		if (launchCfg.zmac) {
+			console.log(`[Settings.Init] ===== ZMAC CONFIGURATION PROCESSING =====`);
+			console.log(`[Settings.Init] launchCfg.zmac input: ${JSON.stringify(launchCfg.zmac, null, 2)}`);
+			console.log(`[Settings.Init] launchCfg.zmac is array: ${Array.isArray(launchCfg.zmac)}`);
+			console.log(`[Settings.Init] launchCfg.zmac length: ${launchCfg.zmac?.length}`);
+			
 			launchCfg.zmac = launchCfg.zmac.map(fp => {
+				console.log(`[Settings.Init] Processing zmac file config: ${JSON.stringify(fp, null, 2)}`);
+				
 				// ListFile structure
 				const fpPath = UnifiedPath.getUnifiedPath(fp.path);
 				const fpSrcDirs = UnifiedPath.getUnifiedPathArray(fp.srcDirs);
 				const fpExclFiles = UnifiedPath.getUnifiedPathArray(fp.excludeFiles);
+				
+				console.log(`[Settings.Init] fpPath: "${fpPath}"`);
+				console.log(`[Settings.Init] fpSrcDirs: ${JSON.stringify(fpSrcDirs)}`);
+				console.log(`[Settings.Init] fpExclFiles: ${JSON.stringify(fpExclFiles)}`);
+				
 				const file = {
 					path: undefined as any,
 					srcDirs: fpSrcDirs ?? [""],
@@ -1093,8 +1110,18 @@ export class Settings {
 					const unifiedFpPath = UnifiedPath.getUnifiedPath(fpPath);
 					file.path = Utility.getAbsFilePathWoUnify(unifiedFpPath, escapedRootFolder)
 				}
+				
+				console.log(`[Settings.Init] Final zmac file config: ${JSON.stringify(file, null, 2)}`);
 				return file;
 			});
+			
+			console.log(`[Settings.Init] Final launchCfg.zmac: ${JSON.stringify(launchCfg.zmac, null, 2)}`);
+			console.log(`[Settings.Init] ===== ZMAC CONFIGURATION PROCESSING END =====`);
+		} else {
+			console.log(`[Settings.Init] ===== NO ZMAC CONFIGURATION FOUND =====`);
+			console.log(`[Settings.Init] launchCfg.zmac is: ${launchCfg.zmac}`);
+			console.log(`[Settings.Init] launchCfg.zmac type: ${typeof launchCfg.zmac}`);
+			console.log(`[Settings.Init] launchCfg keys: ${Object.keys(launchCfg)}`);
 		}
 
 		// revEng
@@ -1284,6 +1311,10 @@ export class Settings {
 		// Unit test timeout
 		if (!launchCfg.unitTestTimeout)
 			launchCfg.unitTestTimeout = 1;	///< 1000 ms
+
+		console.log(`[Settings.Init] ===== SETTINGS INIT END =====`);
+		console.log(`[Settings.Init] Final launchCfg.zmac: ${JSON.stringify(launchCfg.zmac, null, 2)}`);
+		console.log(`[Settings.Init] Final launchCfg keys: ${Object.keys(launchCfg)}`);
 
 		return launchCfg;
 	}

@@ -29,6 +29,8 @@ import {Run} from './run';
  * @param context
  */
 export function activate(context: vscode.ExtensionContext) {
+	console.log('[DEBUG] DeZog extension activate() called');
+
 	// Init package info
 	PackageInfo.Init(context);
 
@@ -392,6 +394,9 @@ class DeZogConfigurationProvider implements vscode.DebugConfigurationProvider {
 	 * I.e. each window has a separate environment.
 	 */
 	resolveDebugConfiguration(_folder: WorkspaceFolder | undefined, config: DebugConfiguration, _token?: CancellationToken): ProviderResult<DebugConfiguration> {
+		console.log('[DEBUG] DeZog resolveDebugConfiguration called');
+		console.log('[DEBUG] DebugConfiguration:', JSON.stringify(config, null, 2));
+
 		return new Promise<DebugConfiguration | undefined>((resolve, reject) => {
 			(async () => {
 				// Remove current debug session

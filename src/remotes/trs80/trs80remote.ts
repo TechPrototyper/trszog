@@ -269,6 +269,7 @@ export class Trs80Remote extends RemoteBase {
     }
 
     // Delegate all DZRP methods to the model-specific remote
+    public async loadBin(path: string): Promise<void> { return this.modelRemote.loadBin(path); }
     public async sendDzrpCmdInit() { return this.modelRemote.sendDzrpCmdInit(); }
     public async getRegistersFromEmulator() { return this.modelRemote.getRegistersFromEmulator(); }
     public async sendDzrpCmdGetRegisters() { return this.modelRemote.sendDzrpCmdGetRegisters(); }

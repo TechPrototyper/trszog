@@ -1,498 +1,399 @@
-import {LabelParserBase} from './labelparserbase';
-import {AsmConfigBase} from '../settings/settings';
 import * as fs from 'fs';
+import * as path from 'path'; // Keep for path.resolve, path.dirname, path.isAbsolute, path.extname
+import { LabelParserBase, Issue } from './labelparserbase'; // Added Issue import
+import { SourceFileEntry, ListFileLine } from './labels';
+import { ZmacConfig } from '../settings/settings';
+// import { Utility } from '../misc/utility'; // Commented out if not used
+import { UnifiedPath } from '../misc/unifiedpath'; // Keep for UnifiedPath.getUnifiedPath
+// import { LabelsClass } from './labels'; // Commented out if not used
+import { MemoryModel } from '../remotes/MemoryModel/memorymodel';
 
-/**
- * Parser for Zmac assembler .bds (Binary Debuggable Source) files.
- * 
- * The .bds format contains debug information for Z80 assembly programs
- * compiled with the zmac assembler. It includes:
- * - Source file mapping  
- * - Label definitions
- * - Binary data locations
- * - Usage information for addresses
- * 
- * Format specification:
- * - Line 1: "binary-debuggable-source"
- * - Lines with format: <hex_addr> <hex_addr> <type> <data>
- * 
- * Types:
- * - 'f': Source file reference
- * - 's': Source line or label
- * - 'd': Binary data bytes  
- * - 'u': Usage information
- */
+
 export class ZmacLabelParser extends LabelParserBase {
-	// Overwrite parser name (for errors).
-	protected parserName = "zmac";
+    private sourceFileContents: Map<string, string[]> = new Map();
+    private currentAsmFilePath: string | undefined;
+    private currentBdsSourceFileName: string | undefined;
+    protected config: ZmacConfig;
+    private rootFolder: string; 
 
-	/// Regex to match .bds file lines
-	private static readonly BDS_LINE_REGEX = /^([0-9a-fA-F]{4})\s+([0-9a-fA-F]{4})\s+([fsdu])\s+(.*)$/;
+    private bdsFileReferences: Map<string, string> = new Map();
 
-	/// Map of source file IDs to file paths
-	private sourceFiles: Map<string, string> = new Map();
+    private cmdOffset = 0;
+    private cmdOffsetApplied = false;
 
-	/**
-	 * Reads the given .bds file and extracts all labels, addresses, and source file references.
-	 * @param config The assembler configuration.
-	 */
-	public loadAsmListFile(config: AsmConfigBase) {
-		try {
-			this.config = config;
-			
-			// Init (in case of several files)
-			this.excludedFileStackIndex = -1;
-			this.includeFileStack = new Array<{fileName: string, includeFileName: string, lineNr: number}>();
-			this.listFile = new Array<any>();
-			this.modulePrefixStack = new Array<string>();
-			this.modulePrefix = undefined as any;
-			this.lastLabel = undefined as any;
+    constructor(
+        memoryModel: MemoryModel,
+        fileLineNrs: Map<number, SourceFileEntry>,
+        lineArrays: Map<string, Array<number>>,
+        labelsForNumber64k: Array<any>,
+        labelsForLongAddress: Map<number, Array<string>>,
+        numberForLabel: Map<string, number>,
+        labelLocations: Map<string, { file: string, lineNr: number, address: number }>,
+        watchPointLines: Array<{ address: number, line: string }>, 
+        assertionLines: Array<{ address: number, line: string }>, 
+        logPointLines: Array<{ address: number, line: string }>, 
+        issueHandler: (issue: Issue) => void,
+        config: ZmacConfig, 
+        rootFolder: string 
+    ) {
+        super(
+            memoryModel,
+            fileLineNrs,
+            lineArrays,
+            labelsForNumber64k,
+            labelsForLongAddress,
+            numberForLabel,
+            labelLocations,
+            watchPointLines,
+            assertionLines,
+            logPointLines,
+            issueHandler
+        );
+        this.config = config;
+        this.rootFolder = rootFolder; 
+        this.parserName = "ZMAC";
+        this.sourceFileContents = new Map();
+        this.listFile = []; 
+        this.includeFileStack = []; 
+    }
 
-			// Check conversion to target memory model
-			this.checkMappingToTargetMemoryModel();
+    public loadAsmListFile(config: ZmacConfig) {
+        this.config = config; 
+        this.currentLineNr = 0;
+        this.listFile = [];
+        this.sourceFileContents.clear();
+        this.bdsFileReferences.clear();
+        this.currentAsmFilePath = undefined;
+        this.currentBdsSourceFileName = undefined;
 
-			// Read and parse the .bds file
-			const bdsPath = config.path;
-			this.parseBdsFile(bdsPath);
+        this.parseBdsFile(this.config.path);
+        this.sourcesModeFinish(); 
+    }
 
-			// Check if Listfile-Mode (always true for .bds files since they don't contain source line mappings)
-			if (config.srcDirs === undefined || config.srcDirs.length === 0) {
-				// Listfile-Mode
-				this.listFileModeFinish();
-				return;
-			}
+    private parseBdsFile(filePath: string): void {
+        this.currentLineNr = 0; 
+        const lines = fs.readFileSync(filePath, 'utf-8').split(/\r?\n/);
 
-			// Phase 2: Parse for source files
-			this.parseAllFilesAndLineNumbers();
+        for (const line of lines) {
+            this.currentLineNr++;
+            if (line.trim() === '') continue;
 
-			// Finish: Create fileLineNrs, lineArrays and labelLocations  
-			this.sourcesModeFinish();
-		}
-		catch (e) {
-			this.throwError(e.message);
-		}
-	}
+            const parts = line.split(/\s+/);
+            const type = parts[0];
+            const addr = parseInt(parts[1], 16);
+            const data = parts.slice(2).join(' ');
 
-	/**
-	 * Parses the .bds file.
-	 * @param filePath Path to the .bds file.
-	 */
-	private parseBdsFile(filePath: string): void {
-		const bdsContent = fs.readFileSync(filePath, 'utf8');
-		const lines = bdsContent.split('\n');
-		
-		// Check header
-		if (lines.length === 0 || !lines[0].includes('binary-debuggable-source')) {
-			throw new Error(`Invalid .bds file format: missing header in ${filePath}`);
-		}
+            switch (type) {
+                case 'f': 
+                    this.parseFileReference(addr, data);
+                    break;
+                case 's': 
+                    this.parseSourceOrLabel(addr, data);
+                    break;
+                case 'a': 
+                    this.parseAddressLabel(addr, data);
+                    break;
+            }
+        }
+    }
 
-		// Parse each line
-		for (let i = 1; i < lines.length; i++) {
-			const line = lines[i].trim();
-			if (line.length === 0) continue;
+    private parseFileReference(addr: number, bdsFileName: string): void {
+        this.currentBdsSourceFileName = bdsFileName.trim();
+        const resolvedPath = this.resolveSourceFilePath(this.currentBdsSourceFileName);
 
-			try {
-				this.parseBdsLine(line, i + 1);
-			} catch (error) {
-				// Log error but continue parsing
-				console.warn(`Warning: Error parsing .bds line ${i + 1} in ${filePath}: ${error.message}`);
-			}
-		}
-	}
+        if (resolvedPath) {
+            this.currentAsmFilePath = resolvedPath;
+            this.bdsFileReferences.set(this.currentBdsSourceFileName, resolvedPath);
 
-	/**
-	 * Parse a single line from the .bds file.
-	 * @param line The line to parse.
-	 * @param lineNumber Line number for error reporting.
-	 */
-	private parseBdsLine(line: string, lineNumber: number): void {
-		const match = ZmacLabelParser.BDS_LINE_REGEX.exec(line);
-		if (!match) {
-			// Log but don't throw - some lines might be malformed but we want to continue
-			console.warn(`Warning: Malformed .bds line ${lineNumber}: ${line}`);
-			return;
-		}
+            if (!this.sourceFileContents.has(resolvedPath)) {
+                try {
+                    const content = fs.readFileSync(resolvedPath, 'utf-8');
+                    this.sourceFileContents.set(resolvedPath, content.split(/\r?\n/));
+                } catch (e) {
+                    this.reportIssue(`Could not read source file: ${resolvedPath}`, 'error');
+                    this.currentAsmFilePath = undefined; 
+                    return;
+                }
+            }
+        } else {
+            this.reportIssue(`Could not resolve source file path for: ${bdsFileName}`, 'warning');
+            this.currentAsmFilePath = undefined;
+        }
+    }
 
-		const [, addr1Str, addr2Str, type, data] = match;
-		const addr1 = parseInt(addr1Str, 16);
-		const addr2 = parseInt(addr2Str, 16);
+    private resolveSourceFilePath(bdsFileName: string): string | undefined {
+        const bdsPath = this.config.path; 
+        const bdsDir = path.dirname(bdsPath);
 
-		// Validate addresses
-		if (isNaN(addr1) || isNaN(addr2)) {
-			console.warn(`Warning: Invalid address in .bds line ${lineNumber}: ${line}`);
-			return;
-		}
+        if (path.isAbsolute(bdsFileName) && fs.existsSync(bdsFileName)) {
+            return UnifiedPath.getUnifiedPath(bdsFileName);
+        }
 
-		// Parse based on entry type
-		try {
-			switch (type) {
-				case 'f':
-					this.parseFileReference(addr1, data);
-					break;
-				case 's':
-					this.parseSourceOrLabel(addr1, data);
-					break;
-				case 'd':
-					this.parseBinaryData(addr1, data);
-					break;
-				case 'u':
-					this.parseUsageInfo(addr1, data);
-					break;
-				default:
-					console.warn(`Warning: Unknown .bds entry type '${type}' in line ${lineNumber}: ${line}`);
-					break;
-			}
-		} catch (error) {
-			console.warn(`Warning: Error parsing .bds line ${lineNumber}: ${error.message}`);
-		}
-	}
+        let testPath = path.resolve(bdsDir, bdsFileName);
+        if (fs.existsSync(testPath)) {
+            return UnifiedPath.getUnifiedPath(testPath);
+        }
 
-	/**
-	 * Parse a file reference line.
-	 * Format: "AAAA AAAA f filename"
-	 * This maps address ranges to source files for proper debugging.
-	 * @param addr The address where this file mapping begins.
-	 * @param data The filename.
-	 */
-	private parseFileReference(addr: number, data: string): void {
-		const filename = data.trim();
-		
-		if (filename.length === 0) {
-			return; // Skip empty filenames
-		}
-		
-		// Store the file mapping for this address
-		this.sourceFiles.set(addr.toString(16), filename);
-		
-		// Also create a list entry to track file boundaries
-		const longAddr = this.createLongAddress(addr, 0);
-		this.currentFileEntry = {
-			fileName: filename,
-			lineNr: 0,
-			longAddr,
-			size: 0, // File references don't consume address space
-			line: `; File: ${filename}`,
-			modulePrefix: this.modulePrefix,
-			lastLabel: this.lastLabel
-		};
-		this.listFile.push(this.currentFileEntry);
-	}
+        if (this.config.srcDirs && this.config.srcDirs.length > 0) {
+            for (const srcDir of this.config.srcDirs) {
+                const fullSrcDir = path.resolve(this.rootFolder, srcDir);
+                testPath = path.resolve(fullSrcDir, bdsFileName);
+                if (fs.existsSync(testPath)) {
+                    return UnifiedPath.getUnifiedPath(testPath);
+                }
+            }
+        }
 
-	/**
-	 * Parse a source line or label definition.
-	 * Format: "AAAA AAAA s text" where text can be:
-	 * - "; comment" (source line comment)
-	 * - "LABEL:" (label definition) 
-	 * - "LABEL: ; comment" (label with comment)
-	 * - "LD A,5" (instruction)
-	 * - "ORG 8000H" (directive)
-	 * - "DB 1,2,3" (data definition)
-	 * @param addr The address.
-	 * @param data The source text.
-	 */
-	private parseSourceOrLabel(addr: number, data: string): void {
-		const text = data.trim();
-		
-		// Skip empty lines
-		if (text.length === 0) {
-			return;
-		}
-		
-		// Create long address for all source content
-		const longAddr = this.createLongAddress(addr, 0);
-		const fileName = this.findSourceFileForAddress(addr) || "";
-		
-		// Check if this is a label definition
-		const labelMatch = /^([A-Za-z_][A-Za-z0-9_]*):/.exec(text);
-		if (labelMatch) {
-			const labelName = labelMatch[1];
-			
-			// Add the label to the symbol table
-			this.addLabelForNumber(longAddr, labelName);
-			
-			// Create list file entry for this label
-			this.currentFileEntry = {
-				fileName,
-				lineNr: 0,
-				longAddr,
-				size: 1, // Labels take up 1 address unit
-				line: text,
-				modulePrefix: this.modulePrefix,
-				lastLabel: this.lastLabel
-			};
-			this.listFile.push(this.currentFileEntry);
-			
-			// Update last label for subsequent entries
-			this.lastLabel = labelName;
-		} else if (text.startsWith(';')) {
-			// This is a source line comment - no machine code generated
-			this.currentFileEntry = {
-				fileName,
-				lineNr: 0,
-				longAddr,
-				size: 0, // Comments don't generate machine code
-				line: text,
-				modulePrefix: this.modulePrefix,
-				lastLabel: this.lastLabel
-			};
-			this.listFile.push(this.currentFileEntry);
-		} else {
-			// This is an instruction, directive, or data definition
-			// We need to estimate the size based on the content type
-			let size = this.estimateInstructionSize(text);
-			
-			this.currentFileEntry = {
-				fileName,
-				lineNr: 0,
-				longAddr,
-				size: size,
-				line: text,
-				modulePrefix: this.modulePrefix,
-				lastLabel: this.lastLabel
-			};
-			this.listFile.push(this.currentFileEntry);
-		}
-	}
-	
-	/**
-	 * Estimate the size of an instruction or directive.
-	 * This is needed for proper address tracking in the debugger.
-	 * @param text The source line text.
-	 * @returns Estimated size in bytes.
-	 */
-	private estimateInstructionSize(text: string): number {
-		const upperText = text.toUpperCase().trim();
-		
-		// Remove label prefix if present (e.g., "LOOP: LD A,5" -> "LD A,5")
-		const colonIndex = upperText.indexOf(':');
-		const instruction = colonIndex >= 0 ? upperText.substring(colonIndex + 1).trim() : upperText;
-		
-		// Handle common directives that don't generate code
-		if (instruction.startsWith('ORG ') || 
-			instruction.startsWith('EQU ') ||
-			instruction.startsWith('TITLE ') ||
-			instruction.startsWith('INCLUDE ') ||
-			instruction.startsWith('IF ') ||
-			instruction.startsWith('ENDIF') ||
-			instruction.startsWith('MACRO ') ||
-			instruction.startsWith('ENDM')) {
-			return 0;
-		}
-		
-		// Handle data definition directives
-		if (instruction.startsWith('DB ') || instruction.startsWith('DEFB ')) {
-			// Count the data items separated by commas
-			const dataStr = instruction.substring(instruction.indexOf(' ') + 1);
-			const items = dataStr.split(',');
-			return items.length;
-		}
-		
-		if (instruction.startsWith('DW ') || instruction.startsWith('DEFW ')) {
-			// Count the word items separated by commas, each takes 2 bytes
-			const dataStr = instruction.substring(instruction.indexOf(' ') + 1);
-			const items = dataStr.split(',');
-			return items.length * 2;
-		}
-		
-		if (instruction.startsWith('DS ') || instruction.startsWith('DEFS ')) {
-			// Reserve space directive - try to parse the number
-			const sizeStr = instruction.substring(instruction.indexOf(' ') + 1).trim();
-			const match = /^(\d+)/.exec(sizeStr);
-			if (match) {
-				return parseInt(match[1], 10);
-			}
-			return 1; // Default if we can't parse
-		}
-		
-		// For Z80 instructions, estimate size based on instruction type
-		// Most Z80 instructions are 1-4 bytes
-		if (instruction.startsWith('LD ') ||
-			instruction.startsWith('ADD ') ||
-			instruction.startsWith('SUB ') ||
-			instruction.startsWith('AND ') ||
-			instruction.startsWith('OR ') ||
-			instruction.startsWith('XOR ') ||
-			instruction.startsWith('CP ') ||
-			instruction.startsWith('INC ') ||
-			instruction.startsWith('DEC ')) {
-			// These can be 1-3 bytes depending on operands
-			if (instruction.includes('(') || instruction.includes('IX') || instruction.includes('IY')) {
-				return 3; // Extended addressing or index registers
-			} else if (instruction.includes(',')) {
-				return 2; // Register to register or immediate
-			}
-			return 1; // Simple register operations
-		}
-		
-		if (instruction.startsWith('JP ') ||
-			instruction.startsWith('JR ') ||
-			instruction.startsWith('CALL ')) {
-			return 3; // Jump/call instructions are typically 3 bytes
-		}
-		
-		if (instruction.startsWith('RET') ||
-			instruction.startsWith('NOP') ||
-			instruction.startsWith('HALT') ||
-			instruction.startsWith('DI') ||
-			instruction.startsWith('EI')) {
-			return 1; // Single byte instructions
-		}
-		
-		// Default estimate for unknown instructions
-		return 1;
-	}
+        testPath = path.resolve(this.rootFolder, bdsFileName);
+        if (fs.existsSync(testPath)) {
+            return UnifiedPath.getUnifiedPath(testPath);
+        }
+        
+        const commonExtensions = ['.asm', '.z80', '.s'];
+        const ext = path.extname(bdsFileName);
+        if (!ext || !commonExtensions.includes(ext.toLowerCase())) {
+            for (const commonExt of commonExtensions) {
+                const nameWithExt = bdsFileName + commonExt;
+                testPath = path.resolve(bdsDir, nameWithExt);
+                if (fs.existsSync(testPath)) {
+                    return UnifiedPath.getUnifiedPath(testPath);
+                }
+                if (this.config.srcDirs && this.config.srcDirs.length > 0) {
+                    for (const srcDir of this.config.srcDirs) {
+                        const fullSrcDir = path.resolve(this.rootFolder, srcDir);
+                        testPath = path.resolve(fullSrcDir, nameWithExt);
+                        if (fs.existsSync(testPath)) {
+                            return UnifiedPath.getUnifiedPath(testPath);
+                        }
+                    }
+                }
+                testPath = path.resolve(this.rootFolder, nameWithExt);
+                 if (fs.existsSync(testPath)) {
+                    return UnifiedPath.getUnifiedPath(testPath);
+                }
+            }
+        }
 
-	/**
-	 * Parse binary data information.
-	 * Format: "AAAA AAAA d XX XX XX ..." where XX are hex bytes
-	 * This provides the actual machine code bytes that correspond to source instructions.
-	 * @param addr The address.
-	 * @param data The hex byte data.
-	 */
-	private parseBinaryData(addr: number, data: string): void {
-		// Split the hex bytes and filter out empty strings
-		const hexBytes = data.trim().split(/\s+/).filter(byte => byte.length > 0);
-		
-		// Validate hex bytes
-		const validBytes = hexBytes.filter(byte => /^[0-9a-fA-F]{2}$/.test(byte));
-		
-		if (validBytes.length === 0) {
-			// No valid bytes, skip this entry
-			return;
-		}
-		
-		// Create long address
-		const longAddr = this.createLongAddress(addr, 0);
-		const fileName = this.findSourceFileForAddress(addr) || "";
-		
-		// Create list file entry for binary data
-		// This represents the actual machine code bytes at this address
-		this.currentFileEntry = {
-			fileName,
-			lineNr: 0,
-			longAddr,
-			size: validBytes.length,
-			line: `; Binary: ${validBytes.join(' ')}`,
-			modulePrefix: this.modulePrefix,
-			lastLabel: this.lastLabel
-		};
-		this.listFile.push(this.currentFileEntry);
-		
-		// Also create entries for each individual byte for better address coverage
-		for (let i = 1; i < validBytes.length; i++) {
-			const byteAddr = this.createLongAddress(addr + i, 0);
-			this.currentFileEntry = {
-				fileName,
-				lineNr: 0,
-				longAddr: byteAddr,
-				size: 1,
-				line: `; Byte: ${validBytes[i]}`,
-				modulePrefix: this.modulePrefix,
-				lastLabel: this.lastLabel
-			};
-			this.listFile.push(this.currentFileEntry);
-		}
-	}
+        this.reportIssue(`Source file '${bdsFileName}' not found. Searched in ${bdsDir}, srcDirs, and ${this.rootFolder}.`, 'warning');
+        return undefined;
+    }
 
-	/**
-	 * Parse usage information.
-	 * Format: "AAAA AAAA u type info"
-	 * This provides additional metadata about how addresses are used.
-	 * @param addr The address.
-	 * @param data The usage data.
-	 */
-	private parseUsageInfo(addr: number, data: string): void {
-		const trimmedData = data.trim();
-		
-		// Skip empty usage info
-		if (trimmedData.length === 0) {
-			return;
-		}
-		
-		// Create long address
-		const longAddr = this.createLongAddress(addr, 0);
-		const fileName = this.findSourceFileForAddress(addr) || "";
-		
-		// Create a usage annotation entry
-		this.currentFileEntry = {
-			fileName,
-			lineNr: 0,
-			longAddr,
-			size: 0, // Usage info doesn't take up address space
-			line: `; Usage: ${trimmedData}`,
-			modulePrefix: this.modulePrefix,
-			lastLabel: this.lastLabel
-		};
-		this.listFile.push(this.currentFileEntry);
-	}
+    private parseSourceOrLabel(addr: number, data: string): void {
+        if (!this.currentAsmFilePath || !this.currentBdsSourceFileName) {
+            if (!this.currentBdsSourceFileName && this.config.path) {
+                 this.reportIssue(`No active source file context for 's' record. Ensure .bds has 'f' directive before 's'. Address: 0x${addr.toString(16)}`, 'warning');
+                 return;
+            }
+             if(this.currentBdsSourceFileName && !this.currentAsmFilePath) {
+                this.currentAsmFilePath = this.resolveSourceFilePath(this.currentBdsSourceFileName);
+                if (!this.currentAsmFilePath) {
+                    this.reportIssue(`Cannot process 's' record for '${this.currentBdsSourceFileName}' as it could not be resolved. Address: 0x${addr.toString(16)}`, 'warning');
+                    return;
+                }
+             }
+        }
+        
+        const sourceLines = this.sourceFileContents.get(this.currentAsmFilePath!);
+        if (!sourceLines) {
+            this.reportIssue(`Source content not loaded for ${this.currentAsmFilePath}. Address: 0x${addr.toString(16)}`, 'error');
+            return;
+        }
 
-	/**
-	 * Find the source file information for a given address.
-	 * This is crucial for mapping addresses back to source files in the debugger.
-	 * @param addr The address to look up.
-	 * @returns Source filename or undefined.
-	 */
-	private findSourceFileForAddress(addr: number): string | undefined {
-		// Look for the nearest file reference at or before this address
-		let bestAddr = -1;
-		let bestFile = '';
-		
-		// Use forEach to avoid iterator issues with older TypeScript targets
-		this.sourceFiles.forEach((filename, addrStr) => {
-			const fileAddr = parseInt(addrStr, 16);
-			if (fileAddr <= addr && fileAddr > bestAddr) {
-				bestAddr = fileAddr;
-				bestFile = filename;
-			}
-		});
-		
-		// Return the filename if found, otherwise undefined
-		return bestAddr >= 0 ? bestFile : undefined;
-	}
+        const originalLineText = data.trim();
+        let originalLineNr = -1;
 
-	/**
-	 * Override parseLabelAndAddress since .bds files are handled differently.
-	 */
-	protected parseLabelAndAddress(line: string) {
-		// This method is not used for .bds files since we parse them differently
-		// The parsing is done in parseBdsFile instead
-	}
+        for (let i = 0; i < sourceLines.length; i++) {
+            if (sourceLines[i].trim() === originalLineText) {
+                originalLineNr = i + 1; 
+                break;
+            }
+        }
 
-	/**
-	 * Override parseFileAndLineNumber since .bds files don't have traditional source line info.
-	 */
-	protected parseFileAndLineNumber(line: string) {
-		// This method is not used for .bds files since source line mapping
-		// is handled differently via the file reference entries
-	}
-	
-	/**
-	 * Override parseAllFilesAndLineNumbers for BDS files.
-	 * BDS files already contain file mapping information from the 'f' entries,
-	 * so we just need to assign line numbers to the list file entries.
-	 */
-	protected parseAllFilesAndLineNumbers() {
-		// For BDS files, we assign sequential line numbers within each file
-		// based on the addresses and file mappings we already parsed
-		
-		let currentLineNr = 0;
-		let lastFileName = '';
-		
-		for (const entry of this.listFile) {
-			if (entry.fileName !== lastFileName) {
-				// New file, reset line number
-				currentLineNr = 0;
-				lastFileName = entry.fileName;
-			}
-			
-			// Only increment line number for entries that represent actual source content
-			if (entry.size > 0 || entry.line.includes('LABEL') || entry.line.includes(';')) {
-				entry.lineNr = currentLineNr;
-				currentLineNr++;
-			} else {
-				// For file references and usage info, use the current line number
-				entry.lineNr = currentLineNr;
-			}
-		}
-	}
+        if (originalLineNr === -1) {
+            const trimmedDataLower = originalLineText.toLowerCase();
+            for (let i = 0; i < sourceLines.length; i++) {
+                const trimmedSourceLower = sourceLines[i].trim().toLowerCase();
+                if (trimmedSourceLower === trimmedDataLower) {
+                    originalLineNr = i + 1; 
+                    break;
+                }
+                if (trimmedSourceLower.endsWith(':') && trimmedSourceLower.slice(0, -1) === trimmedDataLower) {
+                     originalLineNr = i + 1; 
+                    break;
+                }
+                 if (trimmedDataLower.endsWith(':') && trimmedDataLower.slice(0, -1) === trimmedSourceLower) {
+                     originalLineNr = i + 1; 
+                    break;
+                }
+            }
+        }
+
+        if (originalLineNr === -1) {
+            this.reportIssue(`Could not find line "${originalLineText}" in ${this.currentAsmFilePath}. Address: 0x${addr.toString(16)}`, 'warning');
+            return;
+        }
+
+        const instructionSize = this.estimateInstructionSize(originalLineText); 
+        let label: string | undefined = undefined;
+        const labelMatch = originalLineText.match(/^([a-zA-Z_@][a-zA-Z0-9_@]*):?/);
+        if (labelMatch) {
+            label = labelMatch[1];
+            this.addLabel(label, addr, this.currentAsmFilePath!, originalLineNr);
+        }
+
+        const fileEntry: ListFileLine = {
+            fileName: this.currentAsmFilePath!, 
+            lineNr: originalLineNr, 
+            longAddr: addr,
+            size: instructionSize,
+            line: originalLineText, 
+        };
+        this.listFile.push(fileEntry);
+        this.findWpmemAssertionLogpoint(addr, originalLineText); 
+    }
+
+    private estimateInstructionSize(text: string): number {
+        const upperText = text.toUpperCase().trim();
+        if (upperText.includes('EQU') || upperText.includes('.SET') || upperText.startsWith('.') || upperText.endsWith(':')) {
+            if (upperText.endsWith(':') && !upperText.substring(0, upperText.length -1).trim().includes(" ")) return 0; 
+        }
+        return 1; 
+    }
+
+    private parseAddressLabel(addr: number, data: string): void {
+        const label = data.trim();
+        // For 'a' lines, we don't have direct source text from BDS to find the exact line.
+        // We can add the label to the symbol table.
+        // Finding the original line for labelLocations would require searching all source files.
+        this.addLabel(label, addr); // Call without file/line, or try to find it if critical
+    }
+
+    private addLabel(label: string, value: number, filePath?: string, lineNr?: number): void {
+        if (!this.labelsForLongAddress.has(value)) {
+            this.labelsForLongAddress.set(value, []);
+        }
+        this.labelsForLongAddress.get(value)!.push(label);
+        this.numberForLabel.set(label, value);
+
+        if (filePath && lineNr) {
+            this.labelLocations.set(label, { file: filePath, lineNr: lineNr, address: value });
+        }
+    }
+
+    private reportIssue(message: string, severity: 'error' | 'warning', filePath?: string, lineNr?: number): void {
+        if (this.issueHandler) {
+            this.issueHandler({
+                parser: this.parserName,
+                filepath: filePath || this.config.path, 
+                lineNr: lineNr || this.currentLineNr, 
+                severity: severity,
+                message: message,
+            });
+        } else {
+            // Fallback to console if no handler (e.g. during unit tests not focused on UI)
+            const logSource = filePath ? UnifiedPath.getUnifiedPath(filePath) : 'ZmacParser';
+            const logLineNr = lineNr || this.currentLineNr;
+            console.warn(`${this.parserName} [${severity}] ${logSource}:${logLineNr}: ${message}`);
+        }
+    }
+
+    protected parseAllFilesAndLineNumbers(): void {
+        // No-op 
+    }
+
+    protected parseLabelAndAddress(line: string): void {
+        // No-op 
+    }
+
+    /**
+     * Integrates CMD file data. This is a placeholder and needs to be implemented
+     * if ZMAC BDS files need to be correlated with CMD load data for a complete memory map.
+     * @param cmdMappings Map of load addresses to CMD file data.
+     */
+    public enableCmdIntegration(cmdMappings: Map<number, {data: Uint8Array, size: number, entryPoint?: number}>): void {
+        if (this.cmdOffsetApplied) {
+             console.log('[ZmacLabelParser] enableCmdIntegration: Offset already marked as applied. Skipping.');
+             return;
+        }
+
+        if (cmdMappings.size === 0) {
+            console.log('[ZmacLabelParser] enableCmdIntegration called with empty cmdMappings. No offset will be applied.');
+            this.cmdOffsetApplied = true; // Mark as "applied" to prevent re-processing.
+            return;
+        }
+
+        // Assumption: The first load address encountered in cmdMappings is the base for the main program block.
+        // This might need refinement for complex CMD files with multiple, disjoint load segments.
+        const firstLoadAddress = cmdMappings.keys().next().value;
+
+        // Critical Assumption: BDS addresses for the main code block are 0-relative.
+        // If BDS files can have a different base, this logic would need that base as input.
+        const assumedBdsBaseAddress = 0;
+        this.cmdOffset = firstLoadAddress - assumedBdsBaseAddress;
+
+        if (this.cmdOffset === 0) {
+            console.log('[ZmacLabelParser] CMD offset is 0. No label address adjustments needed.');
+            this.cmdOffsetApplied = true;
+            return;
+        }
+
+        console.log(`[ZmacLabelParser] Applying CMD offset: 0x${this.cmdOffset.toString(16)} (LoadAddr: 0x${firstLoadAddress.toString(16)}, AssumedBdsBase: 0x${assumedBdsBaseAddress.toString(16)})`);
+
+        // Adjust labelsForLongAddress: Map<number, Array<string>>
+        const newLabelsForLongAddress = new Map<number, Array<string>>();
+        for (const [addr, labels] of this.labelsForLongAddress) {
+            newLabelsForLongAddress.set(addr + this.cmdOffset, labels);
+        }
+        this.labelsForLongAddress = newLabelsForLongAddress;
+
+        // Adjust numberForLabel: Map<string, number>
+        const newNumberForLabel = new Map<string, number>();
+        for (const [label, addr] of this.numberForLabel) {
+            newNumberForLabel.set(label, addr + this.cmdOffset);
+        }
+        this.numberForLabel = newNumberForLabel;
+
+        // Adjust labelLocations: Map<string, { file: string, lineNr: number, address: number }>
+        const newLabelLocations = new Map<string, { file: string, lineNr: number, address: number }>();
+        for (const [label, loc] of this.labelLocations) {
+            newLabelLocations.set(label, { ...loc, address: loc.address + this.cmdOffset });
+        }
+        this.labelLocations = newLabelLocations;
+
+        // Adjust fileLineNrs: Map<number, SourceFileEntry> (key is address)
+        const newFileLineNrs = new Map<number, SourceFileEntry>();
+        for (const [addr, entry] of this.fileLineNrs) {
+            newFileLineNrs.set(addr + this.cmdOffset, entry);
+        }
+        this.fileLineNrs = newFileLineNrs;
+
+        // Adjust listFile: Array<ListFileLine>
+        this.listFile.forEach(entry => {
+            if (entry.longAddr !== undefined) {
+                entry.longAddr += this.cmdOffset;
+            }
+        });
+
+        // Adjust watchPointLines, assertionLines, logPointLines: Array<{ address: number, line: string }>
+        this.watchPointLines.forEach(entry => entry.address += this.cmdOffset);
+        this.assertionLines.forEach(entry => entry.address += this.cmdOffset);
+        this.logPointLines.forEach(entry => entry.address += this.cmdOffset);
+
+        // Adjust labelsForNumber64k: Array<string[] | undefined> (index is 64k address)
+        const newLabelsForNumber64k = new Array<string[] | undefined>(0x10000); // Max 64k entries
+        for (let i = 0; i < this.labelsForNumber64k.length; i++) { // Iterate up to old length
+            if (this.labelsForNumber64k[i]) {
+                const newAddr = i + this.cmdOffset;
+                if (newAddr >= 0 && newAddr < 0x10000) { // Check bounds for 64k array
+                    newLabelsForNumber64k[newAddr] = this.labelsForNumber64k[i];
+                } else {
+                    this.reportIssue(`Address 0x${i.toString(16)} with offset 0x${this.cmdOffset.toString(16)} (new: 0x${newAddr.toString(16)}) is out of 64k bounds. Label ignored for labelsForNumber64k map.`, 'warning');
+                }
+            }
+        }
+        this.labelsForNumber64k = newLabelsForNumber64k;
+
+        this.cmdOffsetApplied = true;
+        console.log('[ZmacLabelParser] CMD offset successfully applied to label structures.');
+    }
 }

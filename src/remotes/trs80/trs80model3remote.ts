@@ -243,4 +243,36 @@ export class Trs80Model3Remote extends Trs80GpRemote {
             throw new Error(`Failed to eject Model 3 disk from drive ${drive}: ${err.message}`);
         }
     }
+
+    /**
+     * Load a /CMD file for Model 3.
+     * CMD files have a specific format with load address and execution address.
+     * This method uses the base class loadBinCmd implementation which parses
+     * the CMD file internally and uses JSON-RPC writeMemoryRequest.
+     */
+    public async sendDzrpCmdLoadObj(filePath: string): Promise<void> {
+        try {
+            // Use the base class loadBinCmd implementation
+            await this.loadBinCmd(filePath);
+        } catch (err) {
+            throw new Error(`Failed to load CMD file on TRS-80 Model 3: ${err.message}`);
+        }
+    }
+
+    /**
+     * Save a /CMD file for Model 3.
+     */
+    public async sendDzrpCmdSaveObj(startAddress: number, endAddress: number, filePath: string, execAddress?: number): Promise<void> {
+        try {
+            await this.sendTrs80GpJsonRpcRequest('saveCmd', {
+                startAddress,
+                endAddress,
+                filePath,
+                execAddress,
+                machineType: 'model3'
+            });
+        } catch (err) {
+            throw new Error(`Failed to save CMD file on TRS-80 Model 3: ${err.message}`);
+        }
+    }
 }

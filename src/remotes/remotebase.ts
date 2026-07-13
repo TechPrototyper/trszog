@@ -1,4 +1,3 @@
-
 import {Z80_REG, Z80Registers} from './z80registers';
 import {RefList} from '../misc/reflist';
 import {CallStackFrame} from '../callstackframe';
@@ -527,6 +526,24 @@ export class RemoteBase extends EventEmitter {
 	 * @param configuration Contains the list files for the different assemblers
 	 */
 	public readListFiles(configuration: any) {
+		console.log('[DEBUG] RemoteBase.readListFiles: Received configuration. Type:', typeof configuration, 'Is Array:', Array.isArray(configuration));
+		console.log('[DEBUG] RemoteBase.readListFiles: Configuration (JSON):', JSON.stringify(configuration, null, 2));
+
+		if (Array.isArray(configuration)) {
+			console.warn('[DEBUG] RemoteBase.readListFiles: The received configuration IS an ARRAY. This means \'configuration\' is likely \'Settings.launch.zmac\' or similar (e.g., an array of listfile entries for one assembler).');
+			console.log('[DEBUG] RemoteBase.readListFiles: This array will be passed to Labels.readListFiles. If Labels.readListFiles expects an object like { zmac: [...], sjasmplus: [...] }, this will lead to issues as \'configuration.zmac\' would be undefined.');
+		} else if (typeof configuration === 'object' && configuration !== null) {
+			console.log('[DEBUG] RemoteBase.readListFiles: Configuration is an OBJECT. Keys:', Object.keys(configuration));
+			// This case would be hit if Settings.launch itself was passed.
+			if ('zmac' in configuration) {
+				console.log('[DEBUG] RemoteBase.readListFiles: \'zmac\' property FOUND on the received object. Value (JSON):', JSON.stringify(configuration.zmac, null, 2));
+			} else {
+				console.log('[DEBUG] RemoteBase.readListFiles: \'zmac\' property is UNDEFINED on the received object.');
+			}
+		} else {
+			console.warn('[DEBUG] RemoteBase.readListFiles: Received configuration is neither an object nor an array. Actual type:', typeof configuration);
+		}
+
 		// Read files
 		Labels.readListFiles(configuration, this.memoryModel);
 
@@ -1152,39 +1169,57 @@ export class RemoteBase extends EventEmitter {
 		try {
 			// get all old breakpoints for the path
 			const oldBps = this.breakpoints.filter(bp => bp.filePath === path);
-
-			// Create new breakpoints
-			const currentBps = new Array<RemoteBreakpoint>();
-			givenBps.forEach(bp => {
-				let ebp: RemoteBreakpoint|undefined;
-				let error;
-				// Get PC value of that line
-				let longAddr = this.getAddrForFileAndLine(path, bp.lineNr);
-				// Check if valid line
-				if (longAddr >= 0) {
-					// Now search last line with that pc
-					const file = this.getFileAndLineForAddress(longAddr);
-					// Check if right file
-					if (path.valueOf() === file.fileName.valueOf()) {
-						// Create breakpoint object
-						ebp = {bpId: 0, filePath: file.fileName, lineNr: file.lineNr, longAddress: longAddr, condition: bp.condition, log: bp.log, hitCountCondition: bp.hitCountCondition, hitCounter: bp.hitCounter};
-					}
-					else {
-						error = "You cannot set a breakpoint here because the address (" + Utility.getHexString(longAddr & 0xFFFF, 4) + "h) is bound to a different file. Please try to set the breakpoint in: " + file.fileName;
-					}
+		// Create new breakpoints
+		const currentBps = new Array<RemoteBreakpoint>();
+		givenBps.forEach(bp => {
+			console.log(`[RemoteBase] ===== Processing breakpoint =====`);
+			console.log(`[RemoteBase] Path: "${path}"`);
+			console.log(`[RemoteBase] Line: ${bp.lineNr}`);
+			console.log(`[RemoteBase] Condition: "${bp.condition ?? ''}"`);
+			
+			let ebp: RemoteBreakpoint|undefined;
+			let error;
+			// Get PC value of that line
+			console.log(`[RemoteBase] Calling getAddrForFileAndLine("${path}", ${bp.lineNr})`);
+			let longAddr = this.getAddrForFileAndLine(path, bp.lineNr);
+			console.log(`[RemoteBase] getAddrForFileAndLine returned: ${longAddr === -1 ? 'NOT_FOUND (-1)' : '0x' + longAddr.toString(16)}`);
+			
+			// Check if valid line
+			if (longAddr >= 0) {
+				console.log(`[RemoteBase] Valid address found, checking file association...`);
+				// Now search last line with that pc
+				const file = this.getFileAndLineForAddress(longAddr);
+				console.log(`[RemoteBase] getFileAndLineForAddress(0x${longAddr.toString(16)}) returned: file="${file.fileName}", line=${file.lineNr}`);
+				console.log(`[RemoteBase] Comparing files: requested="${path}" vs found="${file.fileName}"`);
+				
+				// Check if right file
+				if (path.valueOf() === file.fileName.valueOf()) {
+					console.log(`[RemoteBase] File match! Creating valid breakpoint.`);
+					// Create breakpoint object
+					ebp = {bpId: 0, filePath: file.fileName, lineNr: file.lineNr, longAddress: longAddr, condition: bp.condition, log: bp.log, hitCountCondition: bp.hitCountCondition, hitCounter: bp.hitCounter};
 				}
 				else {
-					// Additional info
-					error = "Address not found for " + path;
+					console.log(`[RemoteBase] File mismatch! Cannot set breakpoint.`);
+					error = "You cannot set a breakpoint here because the address (" + Utility.getHexString(longAddr & 0xFFFF, 4) + "h) is bound to a different file. Please try to set the breakpoint in: " + file.fileName;
 				}
+			}
+			else {
+				console.log(`[RemoteBase] No address found for this file/line combination.`);
+				// Additional info
+				error = "Address not found for " + path;
+			}
 
-				// add to array
-				if (!ebp) {
-					// Breakpoint position invalid
-					ebp = {bpId: 0, filePath: path, lineNr: bp.lineNr, longAddress: -1, condition: '', log: undefined, error};
-				}
-				currentBps.push(ebp);
-			});
+			// add to array
+			if (!ebp) {
+				console.log(`[RemoteBase] Creating unverified breakpoint with error: "${error}"`);
+				// Breakpoint position invalid
+				ebp = {bpId: 0, filePath: path, lineNr: bp.lineNr, longAddress: -1, condition: '', log: undefined, error};
+			} else {
+				console.log(`[RemoteBase] Created verified breakpoint: bpId=${ebp.bpId}, longAddr=0x${ebp.longAddress.toString(16)}`);
+			}
+			currentBps.push(ebp);
+			console.log(`[RemoteBase] ===== Breakpoint processing complete =====`);
+		});
 
 			// Now check which breakpoints are new or removed (this includes 'changed').
 			const newBps = currentBps.filter(bp => bp.longAddress >= 0 && oldBps.filter(obp => (obp.condition === bp.condition) && (obp.hitCountCondition === bp.hitCountCondition) && (LogEval.compare(obp.log, bp.log)) && (obp.longAddress === bp.longAddress)).length === 0);

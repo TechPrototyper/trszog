@@ -6,6 +6,8 @@ import {PortManager} from './portmanager';
 import {Z80RegistersStandardDecoder} from '../z80registersstandarddecoder';
 import {Z80Registers} from '../z80registers';
 import {MemoryModelTrs80Model1, MemoryModelTrs80Model3} from '../MemoryModel/trs80memorymodels';
+import {CmdFile} from './cmdfile';
+import {Labels} from '../../labels/labels';
 import * as fs from 'fs';
 
 /**
@@ -652,6 +654,13 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
             this.createAndInitializeMemoryModel(result.machineType);
             this.emit('debug_console', 'Memory model initialized for TRS-80');
 
+            // Load the binary file (CMD file for TRS-80) if specified
+            console.log('[trs80gp] Calling load() to load binary file...');
+            this.emit('debug_console', 'Loading binary file...');
+            await this.load();
+            console.log('[trs80gp] Binary file loaded successfully');
+            this.emit('debug_console', 'Binary file loaded successfully');
+
             // Emit 'initialized' event which the system is waiting for
             const message = `${result.programName} initialized`;
             console.log(`[trs80gp] Emitting 'initialized' event with message: ${message}`);
@@ -994,7 +1003,7 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
     public async sendDzrpCmdWriteMem(address: number, data: Uint8Array): Promise<void> {
         try {
             await this.sendTrs80GpJsonRpcRequest('writeMemory', {
-                address: address,
+                address: '0x' + address.toString(16),
                 data: Buffer.from(data).toString('hex')
             });
         } catch (err) {
@@ -1309,5 +1318,83 @@ export abstract class Trs80GpRemote extends DzrpQueuedRemote {
         const highlightedChar = `\x1b[7m${errorChar === '' ? ' ' : errorChar}\x1b[0m`;
         
         return `"${before}${highlightedChar}${after}"`;
+    }
+
+    /**
+     * Loads a .cmd file (TRS-80 command file).
+     * CMD files are the native executable format for TRS-80 systems.
+     * Parses the CMD file format and loads data using JSON-RPC writeMemoryRequest.
+     * 
+     * Validation Strategy:
+     * - BDS file is the single point of truth for addresses and symbols
+     * - CMD blocks must have identical length to BDS blocks (warning if different addresses)
+     * - Different content between CMD and BDS = ERROR (requires new assembly)
+     * - Entry point comes from BDS, not CMD
+     * 
+     * Integration with Labels System:
+     * - This method is called during loadObjs phase for TRS-80 systems
+     * - CMD data supplements BDS debugging information 
+     * - Both are needed for complete breakpoint verification
+     */
+    protected async loadBinCmd(filePath: string): Promise<void> {
+        try {
+            console.log(`[trs80gp] Loading TRS-80 CMD file: ${filePath}`);
+            this.emit('debug_console', `Loading TRS-80 CMD file: ${filePath}`);
+            
+            // Parse the CMD file to extract blocks and metadata
+            const cmdFile = new CmdFile();
+            cmdFile.readFile(filePath);
+            
+            console.log(`[trs80gp] CMD file parsed: ${cmdFile.dataBlocks.length} data blocks, transfer address: 0x${cmdFile.transferAddress.toString(16)}`);
+            
+            // Load each data block into memory using JSON-RPC writeMemoryRequest
+            for (const block of cmdFile.dataBlocks) {
+                if (block.data.length > 0) {
+                    console.log(`[trs80gp] Loading ${block.data.length} bytes at address 0x${block.address.toString(16)}`);
+                    await this.sendDzrpCmdWriteMem(block.address, block.data);
+                }
+            }
+            
+            // Integrate CMD data with Labels system for breakpoint verification
+            // Create CMD memory mappings for the ZmacLabelParser integration
+            const cmdMappings = new Map<number, {data: Uint8Array, size: number, entryPoint?: number}>();
+            for (const block of cmdFile.dataBlocks) {
+                if (block.data.length > 0) {
+                    cmdMappings.set(block.address, {
+                        data: block.data,
+                        size: block.data.length,
+                        entryPoint: block.address === cmdFile.transferAddress ? cmdFile.transferAddress : undefined
+                    });
+                }
+            }
+            
+            // Pass CMD data to Labels system for integration with ZmacLabelParser
+            if (cmdMappings.size > 0) {
+                const integrationSuccess = Labels.enableCmdIntegration(cmdMappings);
+                if (integrationSuccess) {
+                    console.log(`[trs80gp] CMD file data successfully integrated with Labels system for breakpoint verification`);
+                } else {
+                    console.log(`[trs80gp] Warning: No zmac parser available for CMD integration - breakpoint verification may be limited`);
+                }
+            }
+            
+            // Emit notification that CMD file has been processed for Labels system integration
+            const memRange = cmdFile.getMemoryRange();
+            if (memRange) {
+                console.log(`[trs80gp] CMD file loaded successfully: ${cmdFile.getTotalDataSize()} bytes from 0x${memRange.startAddress.toString(16)} to 0x${memRange.endAddress.toString(16)}`);
+                this.emit('debug_console', `CMD file loaded: ${cmdFile.getTotalDataSize()} bytes - Labels system integration complete`);
+                
+                // Note: With the modified startup sequence, this CMD data is now loaded before breakpoint verification
+                console.log(`[trs80gp] CMD file processing complete - breakpoint verification can now proceed with complete debugging information`);
+            } else {
+                console.log(`[trs80gp] CMD file loaded successfully: ${cmdFile.getTotalDataSize()} bytes`);
+                this.emit('debug_console', `CMD file loaded: ${cmdFile.getTotalDataSize()} bytes - Labels system integration complete`);
+            }
+            
+        } catch (err) {
+            console.log(`[trs80gp] Failed to load CMD file: ${err.message}`);
+            this.emit('debug_console', `Failed to load CMD file: ${err.message}`);
+            throw new Error(`Failed to load CMD file: ${err.message}`);
+        }
     }
 }

@@ -1455,7 +1455,7 @@ hl: 0x${Utility.getHexString(resp.hl, 4)}`;
 	}
 
 
-	/** Loads .nex, .sna or .p files.
+	/** Loads .nex, .sna, .p or .cmd files.
 	 */
 	public async loadBin(filePath: string): Promise<void> {
 		try {
@@ -1467,6 +1467,15 @@ hl: 0x${Utility.getHexString(resp.hl, 4)}`;
 				await this.loadBinNex(filePath);
 			else if (ext === '.p' || ext === '.81' || ext === '.p81')
 				await this.loadBinZx81(filePath);
+			else if (ext === '.cmd') {
+				// CMD files are only supported by TRS-80 Model 1 and Model 3 remotes
+				if (Settings.launch.remoteType === 'trs80gp') {
+					// Delegate to the model-specific implementation which uses JSON-RPC loadCmd
+					await (this as any).sendDzrpCmdLoadObj(filePath);
+				} else {
+					throw Error("CMD files are only supported with remoteType:'trs80gp' (Model 1 and Model 3).");
+				}
+			}
 			else {
 				// Error: unsupported file
 				throw Error("File extension in '" + filePath + "' not supported with remoteType:'" + Settings.launch.remoteType + "'.");

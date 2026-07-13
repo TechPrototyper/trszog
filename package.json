@@ -1648,32 +1648,37 @@
 						}
 					},
 					{
-						"label": "DeZog: Simulator - TRS-80",
-						"description": "Configuration for DeZog to use the internal simulator for TRS-80 development with zmac assembler.",
+						"label": "DeZog: trs80gp with zmac",
+						"description": "Configuration for DeZog to use the trs80gp emulator for TRS-80 development with zmac assembler.",
 						"body": {
 							"type": "dezog",
 							"request": "launch",
-							"name": "Simulator - TRS-80",
-							"remoteType": "zsim",
-							"zsim": {
-								"visualMemory": true,
-								"memoryModel": "RAM"
+							"name": "trs80gp with zmac",
+							"remoteType": "trs80gp",
+							"trs80": {
+								"port": 49152,
+								"emulator": {
+									"path": "${1:Path to trs80gp executable}",
+									"model": 1,
+									"memorySize": 48,
+									"autoStart": true
+								}
 							},
 							"zmac": [
 								{
-									"path": "${1:Zmac .bds file}"
+									"path": "${2:Zmac .bds file}"
 								}
 							],
 							"commandsAfterLaunch": [],
 							"history": {
-								"reverseDebugInstructionCount": 1000000,
-								"spotCount": 10,
+								"reverseDebugInstructionCount": 10000,
+								"spotCount": 5,
 								"codeCoverageEnabled": true
 							},
 							"startAutomatically": false,
 							"rootFolder": "^\"\\${workspaceFolder\\}\"",
-							"load": "${2:.cmd or binary file to load}",
-							"topOfStack": "${3: Top of stack / label name}"
+							"load": "${3:.cmd file to load}",
+							"topOfStack": "${4: Top of stack / label name}"
 						}
 					},
 					{

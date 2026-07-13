@@ -1,4 +1,4 @@
-import {ListConfigBase} from './../settings/settings';
+import {ListConfigBase, ZmacConfig} from './../settings/settings'; // Added ZmacConfig
 import {Utility} from '../misc/utility';
 import {MemoryModel} from '../remotes/MemoryModel/memorymodel';
 import {Remote} from '../remotes/remotebase';
@@ -151,6 +151,10 @@ export class LabelsClass {
 	// Date of the list file
 	protected youngestModifiedFile: {filename: string, time: number} | undefined;
 
+	/// Reference to the ZmacLabelParser for CMD integration (TRS-80)
+	/// This enables the TRS-80 remote to pass CMD file data to the zmac parser
+	private zmacLabelParser: ZmacLabelParser | undefined;
+
 
 	/**
 	 * Initializes the lists/arrays.
@@ -201,8 +205,24 @@ export class LabelsClass {
 	 * @param memoryModel The memory model. Used for bank/long address creation.
 	 */
 	public readListFiles(mainConfig: SettingsParameters, memoryModel: MemoryModel) {
+		console.log('[DEBUG] Labels.readListFiles: Received mainConfig. Type:', typeof mainConfig, 'Is Array:', Array.isArray(mainConfig));
+		console.log('[DEBUG] Labels.readListFiles: mainConfig (JSON):', JSON.stringify(mainConfig, null, 2));
+
+		if (Array.isArray(mainConfig)) {
+			console.warn('[DEBUG] Labels.readListFiles: WARNING! mainConfig is an ARRAY. Properties like mainConfig.zmac, mainConfig.sjasmplus, etc., will be UNDEFINED. No list file parsers will be invoked unless mainConfig itself is a list of configurations for a single, implicitly known assembler (which is not the design here).');
+		} else if (typeof mainConfig === 'object' && mainConfig !== null) {
+			console.log('[DEBUG] Labels.readListFiles: mainConfig object keys:', Object.keys(mainConfig));
+		} else {
+			console.warn('[DEBUG] Labels.readListFiles: mainConfig is not a typical object or array. Actual type:', typeof mainConfig);
+		}
+		
 		// Clear some fields
-		this.init(mainConfig.smallValuesMaximum);
+		if (typeof mainConfig === 'object' && mainConfig !== null && !Array.isArray(mainConfig) && mainConfig.smallValuesMaximum !== undefined) {
+			this.init(mainConfig.smallValuesMaximum);
+		} else {
+			console.warn('[DEBUG] Labels.readListFiles: mainConfig is not a standard object or smallValuesMaximum is missing. Using default for smallValuesMaximum (0).');
+			this.init(0); // Defaulting to 0, adjust if another default is more appropriate
+		}
 
 		// Prepare callback to issue handler
 		const issueHandler = (issue) => {
@@ -210,7 +230,8 @@ export class LabelsClass {
 		}
 
 		// sjasmplus
-		if (mainConfig.sjasmplus) {
+		if (typeof mainConfig === 'object' && mainConfig !== null && mainConfig.sjasmplus) {
+			console.log(`[Labels] Processing sjasmplus configurations...`);
 			for (const config of mainConfig.sjasmplus) {
 				// Parse SLD file
 				const parser = new SjasmplusSldLabelParser(memoryModel, this.fileLineNrs, this.lineArrays, this.labelsForNumber64k, this.labelsForLongAddress, this.numberForLabel, this.labelLocations, this.watchPointLines, this.assertionLines, this.logPointLines, issueHandler);
@@ -219,7 +240,8 @@ export class LabelsClass {
 		}
 
 		// z80asm
-		if (mainConfig.z80asm) {
+		if (typeof mainConfig === 'object' && mainConfig !== null && mainConfig.z80asm) {
+			console.log(`[Labels] Processing z80asm configurations...`);
 			const parser = new Z80asmLabelParser(memoryModel, this.fileLineNrs, this.lineArrays, this.labelsForNumber64k, this.labelsForLongAddress, this.numberForLabel, this.labelLocations, this.watchPointLines, this.assertionLines, this.logPointLines, issueHandler);
 			for (const config of mainConfig.z80asm) {
 				this.loadAsmListFile(parser, config);
@@ -227,7 +249,8 @@ export class LabelsClass {
 		}
 
 		// z88dk
-		if (mainConfig.z88dk) {
+		if (typeof mainConfig === 'object' && mainConfig !== null && mainConfig.z88dk) {
+			console.log(`[Labels] Processing z88dk configurations...`);
 			const parser = new Z88dkLabelParser(memoryModel, this.fileLineNrs, this.lineArrays, this.labelsForNumber64k, this.labelsForLongAddress, this.numberForLabel, this.labelLocations, this.watchPointLines, this.assertionLines, this.logPointLines, issueHandler);
 			for (const config of mainConfig.z88dk) {
 				this.loadAsmListFile(parser, config);
@@ -235,7 +258,8 @@ export class LabelsClass {
 		}
 
 		// z88dkv2
-		if (mainConfig.z88dkv2) {
+		if (typeof mainConfig === 'object' && mainConfig !== null && mainConfig.z88dkv2) {
+			console.log(`[Labels] Processing z88dkv2 configurations...`);
 			const parser = new Z88dkLabelParserV2(memoryModel, this.fileLineNrs, this.lineArrays, this.labelsForNumber64k, this.labelsForLongAddress, this.numberForLabel, this.labelLocations, this.watchPointLines, this.assertionLines, this.logPointLines, issueHandler);
 			for (const config of mainConfig.z88dkv2) {
 				this.loadAsmListFile(parser, config);
@@ -243,15 +267,57 @@ export class LabelsClass {
 		}
 
 		// zmac
-		if (mainConfig.zmac) {
-			const parser = new ZmacLabelParser(memoryModel, this.fileLineNrs, this.lineArrays, this.labelsForNumber64k, this.labelsForLongAddress, this.numberForLabel, this.labelLocations, this.watchPointLines, this.assertionLines, this.logPointLines, issueHandler);
-			for (const config of mainConfig.zmac) {
-				this.loadAsmListFile(parser, config);
+		if (typeof mainConfig === 'object' && mainConfig !== null && mainConfig.zmac) {
+			console.log(`[Labels] Processing zmac configurations: ${JSON.stringify(mainConfig.zmac, null, 2)}`);
+			console.log(`[Labels] Creating ZmacLabelParser for ${mainConfig.zmac.length} configurations`);
+			// One parser instance can handle multiple Zmac configurations if necessary,
+			// but the constructor needs a single ZmacConfig for its initial setup if it uses 'this.config' directly in constructor.
+			// However, loadAsmListFile takes the specific config for each file.
+			// For the constructor, we might pass the first config, or adjust constructor if it doesn't need a specific one initially.
+			// Let's assume the constructor can take one of the configs and rootFolder.
+			// The rootFolder is on mainConfig itself.
+			if (mainConfig.zmac.length > 0) { // Ensure there is at least one zmac config
+				const firstZmacConfig = mainConfig.zmac[0]; // Use the first for constructor
+				const parser = new ZmacLabelParser(
+					memoryModel, 
+					this.fileLineNrs, 
+					this.lineArrays, 
+					this.labelsForNumber64k, 
+					this.labelsForLongAddress, 
+					this.numberForLabel, 
+					this.labelLocations, 
+					this.watchPointLines, 
+					this.assertionLines, 
+					this.logPointLines, 
+					issueHandler,
+					firstZmacConfig, // Pass the first ZmacConfig
+					mainConfig.rootFolder // Pass the rootFolder from mainConfig
+				);
+				this.zmacLabelParser = parser;
+				for (const config of mainConfig.zmac) {
+					console.log(`[Labels] [ZMAC] About to process config: ${JSON.stringify(config, null, 2)}`);
+					try {
+						const paths = fglob.sync(config.path);
+						console.log(`[Labels] [ZMAC] Globbed paths for config.path (${config.path}):`, paths);
+						for (const path of paths) {
+							// Ensure srcDirs and excludeFiles are present for AsmConfigBase compatibility
+							// Also pass rootFolder to loadAsmListFile if it needs it, though it's stored in parser instance now.
+							const pathConfig: ZmacConfig = {...config, path: path, srcDirs: config.srcDirs || [], excludeFiles: config.excludeFiles || []};
+							console.log(`[Labels] [ZMAC] Calling loadAsmListFile with pathConfig: ${JSON.stringify(pathConfig, null, 2)}`);
+							parser.loadAsmListFile(pathConfig); // loadAsmListFile takes the specific ZmacConfig
+							console.log(`[Labels] [ZMAC] Returned from loadAsmListFile for path: ${path}`);
+						}
+					} catch (e: any) {
+						console.error(`[Labels] [ZMAC] ERROR during globbing or loadAsmListFile: ${e.message}`);
+						this.errorHappened = e.message;
+					}
+				}
 			}
 		}
 
 		// Reverse Engineering List File
-		if (mainConfig.revEng) {
+		if (typeof mainConfig === 'object' && mainConfig !== null && mainConfig.revEng) {
+			console.log(`[Labels] Processing revEng configurations...`);
 			const parser = new ReverseEngineeringLabelParser(memoryModel, this.fileLineNrs, this.lineArrays, this.labelsForNumber64k, this.labelsForLongAddress, this.numberForLabel, this.labelLocations, this.watchPointLines, this.assertionLines, this.logPointLines, this.skipAddresses, this.codeAddresses, issueHandler);
 			for (const config of mainConfig.revEng) {
 				// Load file(s) (with globbing)
@@ -286,14 +352,15 @@ export class LabelsClass {
 	 * @param config The configuration.
 	 */
 	protected loadAsmListFile(parser: LabelParserBase, config: ListConfigBase) {
+		console.log(`[Labels] loadAsmListFile ENTRY for parser: ${parser.constructor.name}, config: ${JSON.stringify(config, null, 2)}`);
 		try {
-			const paths = fglob.sync(config.path);	// config.path is absolute
-			//const paths = globSync(config.path);	// config.path is absolute
+			const paths = fglob.sync(config.path);
+			console.log(`[Labels] Globbed paths for config.path (${config.path}):`, paths);
 			for (const path of paths) {
-				const pathConfig: ListConfigBase = {...config, path: path};	// complicated, but safe in case structure is extended in the future
-				// Load file
+				const pathConfig: ListConfigBase = {...config, path: path};
+				console.log(`[Labels] Calling parser.loadAsmListFile with pathConfig: ${JSON.stringify(pathConfig, null, 2)}`);
 				parser.loadAsmListFile(pathConfig);
-
+				console.log(`[Labels] Returned from parser.loadAsmListFile for path: ${path}`);
 				// Get date of the list file
 				const changed = fs.statSync(path).mtimeMs;
 				// Remember youngest file
@@ -303,9 +370,10 @@ export class LabelsClass {
 			}
 		}
 		catch (e) {
-			// Just remember that an exception happened
+			console.error(`[Labels] ERROR in loadAsmListFile: ${e.message}`);
 			this.errorHappened = e.message;
 		}
+		console.log(`[Labels] loadAsmListFile EXIT for parser: ${parser.constructor.name}`);
 	}
 
 
@@ -319,7 +387,24 @@ export class LabelsClass {
 		return this.youngestModifiedFile;
 	}
 
-
+	/**
+	 * Enables CMD file integration for TRS-80 systems.
+	 * This allows the Labels system to integrate CMD file data with BDS debug information.
+	 * 
+	 * @param cmdMappings Map of load addresses to CMD file data
+	 * @returns true if integration was successful, false if no zmac parser is available
+	 */
+	public enableCmdIntegration(cmdMappings: Map<number, {data: Uint8Array, size: number, entryPoint?: number}>): boolean {
+		if (!this.zmacLabelParser) {
+			console.warn('[Labels] No ZmacLabelParser available for CMD integration');
+			return false;
+		}
+		
+		// Pass CMD data to the zmac parser for integration
+		this.zmacLabelParser.enableCmdIntegration(cmdMappings);
+		console.log(`[Labels] CMD integration enabled with ${cmdMappings.size} memory regions`);
+		return true;
+	}
 	/**
 	 * Accessor for the watchpoint lines.
 	 * Long addresses.
@@ -735,14 +820,33 @@ export class LabelsClass {
 	 * @returns The associated (long) address. -1 if file or line does not exist.
 	 */
 	public getAddrForFileAndLine(fileName: string, lineNr: number): number {
+		console.log(`[Labels] ===== getAddrForFileAndLine() =====`);
+		console.log(`[Labels] Input fileName: "${fileName}"`);
+		console.log(`[Labels] Input lineNr: ${lineNr}`);
+		
 		const filePath = Utility.getRelFilePath(fileName);
+		console.log(`[Labels] Normalized filePath: "${filePath}"`);
+		
 		let addr = -1;
 		const lineArray = this.lineArrays.get(filePath);
+		console.log(`[Labels] Found lineArray for "${filePath}": ${lineArray ? 'YES' : 'NO'}`);
+		
 		if (lineArray) {
+			console.log(`[Labels] LineArray length: ${lineArray.length}`);
 			addr = lineArray[lineNr];
+			console.log(`[Labels] LineArray[${lineNr}]: ${addr !== undefined ? '0x' + addr.toString(16) : 'undefined'}`);
 			if (addr === undefined)
 				addr = -1;
+		} else {
+			// Debug: Show available files in lineArrays
+			console.log(`[Labels] Available files in lineArrays:`);
+			this.lineArrays.forEach((_, key) => {
+				console.log(`[Labels]   "${key}"`);
+			});
 		}
+		
+		console.log(`[Labels] Returning address: ${addr === -1 ? 'NOT_FOUND (-1)' : '0x' + addr.toString(16)}`);
+		console.log(`[Labels] ===== getAddrForFileAndLine() END =====`);
 		return addr;
 	}
 
