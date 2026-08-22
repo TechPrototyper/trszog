@@ -663,7 +663,11 @@ Transports:
   listening on the port; a bridge you started by hand is left alone and simply
   connected to, and only a bridge the remote started is stopped at the end.
   Requires `bridge` (path to the script) and `serial` (the device); `baud`
-  defaults to 460800.
+  defaults to 460800. The interpreter defaults to `python3` and can be pinned
+  with `python` — useful because VS Code launched from the Dock has a minimal
+  PATH, so `python3` may resolve to a system Python without pyserial; either
+  `pip3 install pyserial` there, or set `python` to the interpreter that has
+  it (e.g. a pyenv path).
 - **`esp32`**: connect over the network to the on-board ESP32 debug server —
   set `host` and `port`; nothing is spawned.
 - **`serial`**: reserved for a future client that speaks the binary protocol
@@ -671,9 +675,40 @@ Transports:
 
 Optional keys: `attachTo` (`expansionInterface` | `mainboard`, only when
 `target: physical`), `host`/`port` (default `localhost:49152`), `socketTimeout`
-(default 5 s). The debug protocol itself — both the JSON-RPC layer and the
-binary wire protocol — is documented in `docs/DEBUG-PROTOCOL.md` in the
-trs80-rev-z repository, so you can also drive the core with a different client.
+(default 5 s), `screen` (default true, see below). The debug protocol itself —
+both the JSON-RPC layer and the binary wire protocol — is documented in
+`docs/DEBUG-PROTOCOL.md` in the trs80-rev-z repository, so you can also drive
+the core with a different client.
+
+**Debugging the Verilator emulator:** the trs80-rev-z repository's own
+cycle-true emulator exposes the identical debug core on a local TCP port
+(`sim/emu/run.sh --hidden --debug-tcp=5555`). Point the bridge at it with
+`"serial": "tcp:5555"` — everything else stays the same, so the launch config
+is a one-line switch between the emulator and the board.
+
+**Capabilities are taken from the machine, not assumed:** the backend's
+`initialize` response advertises what the debug core can really do. With the
+current core that is 7 hardware breakpoints, 4 hardware data watchpoints
+(these enable **WPMEM**), working `setRegister`, native step-over, and —
+where the backend supports it — keyboard injection and **non-intrusive
+memory reads**: on cores whose memory is FPGA block RAM (the Rev Z machine,
+and therefore the Verilator emulator) `readMemory` is served from second
+BRAM ports even while the machine runs, stealing zero CPU cycles. On a real
+TRS-80 behind the dongle the baseline remains the transparent
+halt/peek/run of a classic ICE — reported honestly, chosen automatically.
+
+**Screen view:** since the machine has no window (the FPGA machine none at
+all, the emulator may run `--hidden`), the `revz` session opens a webview
+panel with the machine's screen, rendered with the same authentic renderer
+the internal simulator uses. It is fed by polling the 1 KB text VRAM
+(0x3C00–0x3FFF) over the ordinary debug link — ~10 Hz while the CPU runs, a
+single consistent frame on every step or stop. On backends with
+non-intrusive reads (see above) this polling does not touch the machine at
+all; on baseline backends each poll is a brief transparent halt/peek/run. Click the panel and type:
+keys are injected into the machine's keyboard matrix (if the debug core
+supports the KEYS extension; older cores simply report the capability as
+absent and the view stays display-only). Disable the panel with
+`"revz": {"screen": false}`.
 
 
 ### What is a 'Remote'?

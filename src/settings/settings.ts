@@ -209,6 +209,12 @@ export interface RevzType {
 	// Socket timeout in seconds when connecting to the debug server.
 	socketTimeout?: number;
 
+	// If true (default) a webview panel with the machine's screen is
+	// shown, fed by polling the text VRAM over the debug link. Keyboard
+	// input in the panel goes to the machine when the backend supports
+	// key injection.
+	screen?: boolean;
+
 	// How the host reaches the debug core.
 	transport: RevzTransport;
 }
@@ -228,6 +234,11 @@ export interface RevzTransport {
 	bridge?: string;                  // path to tools/trszog_bridge.py (trs80-rev-z repo)
 	serial?: string;                  // the dongle's serial device
 	baud?: number;                    // default 460800
+	// The Python interpreter used to start the bridge. Default 'python3'.
+	// VS Code launched from the Dock/Finder has a minimal PATH, so
+	// 'python3' may resolve to the system Python without pyserial —
+	// point this at the interpreter that has it (e.g. a pyenv path).
+	python?: string;
 }
 
 
@@ -767,6 +778,8 @@ export class Settings {
 				launchCfg.revz.dongle = 'fpga';
 			if (!launchCfg.revz.transport)
 				launchCfg.revz.transport = {kind: 'python'} as RevzTransport;
+			if (launchCfg.revz.screen === undefined)
+				launchCfg.revz.screen = true;
 			const tr = launchCfg.revz.transport;
 			if (tr.port === undefined)
 				tr.port = 49152;
@@ -777,6 +790,8 @@ export class Settings {
 					tr.autoStart = true;
 				if (tr.baud === undefined)
 					tr.baud = 460800;
+				if (tr.python === undefined)
+					tr.python = 'python3';
 				if (tr.bridge)
 					tr.bridge = Utility.getAbsFilePath(UnifiedPath.getUnifiedPath(tr.bridge), rootFolder);
 			}

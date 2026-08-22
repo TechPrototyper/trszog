@@ -40,7 +40,7 @@
 	"private": true,
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/TechPrototyper/trszog"
+		"url": "https://github.com/maziac/DeZog"
 	},
 	"sponsor": {
 		"url": "https://github.com/sponsors/maziac"
@@ -1151,6 +1151,11 @@
 										"type": "number",
 										"description": "Seconds to wait for the debug server to accept a connection. Default 5."
 									},
+									"screen": {
+										"type": "boolean",
+										"description": "If true (default) a webview panel with the machine's screen is shown, fed by polling the text VRAM over the debug link. Keyboard input in the panel goes to the machine when the backend supports key injection.",
+										"default": true
+									},
 									"transport": {
 										"type": "object",
 										"additionalProperties": false,
@@ -1189,6 +1194,11 @@
 												"type": "number",
 												"description": "kind='python' only: serial baud rate. Default 460800.",
 												"default": 460800
+											},
+											"python": {
+												"type": "string",
+												"description": "kind='python' only: the Python interpreter used to start the bridge (needs pyserial). Default 'python3'. VS Code launched from the Dock has a minimal PATH, so give a full path (e.g. a pyenv interpreter) if the default resolves to a Python without pyserial.",
+												"default": "python3"
 											}
 										},
 										"required": ["kind"]
@@ -1871,6 +1881,41 @@
 							"rootFolder": "^\"\\${workspaceFolder\\}\"",
 							"load": "${3:.cmd file to load}",
 							"topOfStack": "${4: Top of stack / label name}"
+						}
+					},
+					{
+						"label": "DeZog: TRS-80 Rev Z",
+						"description": "Configuration for DeZog to debug the TRS-80 Rev Z machine (FPGA board or the Verilator emulator) via the debug bridge.",
+						"body": {
+							"type": "dezog",
+							"request": "launch",
+							"name": "revz",
+							"remoteType": "revz",
+							"revz": {
+								"target": "fpga",
+								"dongle": "fpga",
+								"transport": {
+									"kind": "python",
+									"serial": "${1:/dev/cu.usbserial-XXXX or tcp:5555 for the emulator}",
+									"bridge": "${2:Path to trs80-rev-z/tools/trszog_bridge.py}",
+									"autoStart": true
+								}
+							},
+							"zmac": [
+								{
+									"path": "${3:Zmac .bds file}"
+								}
+							],
+							"commandsAfterLaunch": [],
+							"history": {
+								"reverseDebugInstructionCount": 10000,
+								"spotCount": 5,
+								"codeCoverageEnabled": true
+							},
+							"startAutomatically": false,
+							"rootFolder": "^\"\\${workspaceFolder\\}\"",
+							"load": "${4:.cmd file to load}",
+							"topOfStack": "${5: Top of stack / label name}"
 						}
 					},
 					{
