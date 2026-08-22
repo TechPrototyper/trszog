@@ -19,7 +19,7 @@
 The debugging paths:
 
 - **`trs80sim` — the built-in simulator.** Available now, works out of the box. Based on Lawrence Kesteloot's superb open-source TypeScript TRS-80 emulator (details below).
-- **Real Hardware FPGA Debugging (`trs80-rev-z`) — RELEASED! 🎉** Hardware debugging via a dedicated virtual debug dongle core in FPGA, enabling live Z80 source-level debugging on physical silicon directly from VS Code.
+- **Real Hardware FPGA Debugging (`trs80-rev-z`) — RELEASED! 🎉** Hardware debugging via a dedicated virtual debug dongle core in FPGA, enabling live Z80 source-level debugging on physical silicon directly from VS Code — including a **live screen panel** (the machine's display, polled over the debug link), a **keyboard into the machine**, hardware **watchpoints** (`WPMEM`), and **non-intrusive memory reads** that cost the running machine zero CPU cycles. The same remote also drives Rev Z's cycle-true **headless Verilator machine** — the full RTL without any FPGA board, switched by one line in `launch.json`.
 - **`trs80gp` (Experimental).** George Phillips' [trs80gp](http://48k.ca/trs80gp.html) is the gold standard of TRS-80 emulation; experimental protocol support is included in `trszog`.
 
 ### Built-in TRS-80 simulator (`trs80sim`) — works out of the box
@@ -82,6 +82,35 @@ The FPGA-based TRS-80 Model 1 [TRS-80 Rev Z](https://github.com/TechPrototyper/t
 
 In `trszog`, an FPGA target is seamlessly handled as another remote type, keeping the developer experience identical between local in-process simulation and real FPGA hardware.
 
+**What the debugger gets** — capabilities are not assumed but taken from the machine's own `initialize` handshake (see `DEBUG-PROTOCOL.md` in the trs80-rev-z repository):
+
+| Capability | Status |
+|---|---|
+| Hardware PC breakpoints (7 comparator slots — work in ROM, no code patching) | ✅ works |
+| Hardware data watchpoints (4 slots) → DeZog **`WPMEM`**, read & write | ✅ works |
+| Step into / over / out; instruction-boundary-exact halt & resume (`cpu_cen` seam) | ✅ works |
+| Register view & **edit** (via instruction stuffing, like a real ICE) | ✅ works |
+| **Live screen panel in VS Code** — the machine's display, polled from text VRAM over the debug link, rendered with the authentic Kesteloot canvas | ✅ works |
+| **Keyboard into the machine** — click the panel and type; keystrokes are injected into the keyboard matrix (KEYS extension, HID-report semantics) | ✅ works |
+| **Non-intrusive memory reads** — `readMemory` under RUN served from second BRAM ports, **zero CPU cycles stolen** (verified: NEWDOS boots and serves `DIR` under ~680 VRAM polls/s with the FDC untouched) | ✅ works |
+| Target-reset survival — the machine can reset under the debugger and the session resyncs instead of dying | ✅ works |
+
+On a *real* TRS-80 behind the future hardware dongle, where memory sits on the machine's bus, the reads fall back automatically to the classic transparent halt/peek/run of an ICE — honestly reported per backend, chosen per capability.
+
+#### No board? The same machine, headless
+
+The trs80-rev-z repository ships a cycle-true **Verilator emulator** of the identical RTL — including the identical debug core. Start it headless and point the same `revz` config at its TCP debug port instead of a serial device:
+
+```
+sim/emu/run.sh --hidden --volume=0 --debug-tcp=5555
+```
+
+```jsonc
+"transport": { "kind": "python", "serial": "tcp:5555", ... }
+```
+
+Everything else — breakpoints, watchpoints, the screen panel, the keyboard — is byte-for-byte the same session. Games are fully playable in the VS Code panel while no emulator window exists at all.
+
 ### Reference Emulator: `trs80gp` (Experimental)
 
 George Phillips' [trs80gp](http://48k.ca/trs80gp.html) is universally recognized as the gold standard of TRS-80 emulation — cycle-exact, covering the entire model family. An experimental protocol for remote debugging `trs80gp` is included in `trszog`, yet this has not been released by George and perhaps won't be. As the whole idea of a modern toolchain sprang from integrating VS Code with zmac and trs80gp, this reference is mandatory; however, possibly not available for users for the time being.
@@ -118,7 +147,7 @@ Example `launch.json` configuration for FPGA hardware debugging:
         "transport": {
             "kind": "python",
             "serial": "/dev/cu.usbserial-1420",
-            "bridge": "${workspaceFolder}/tools/trszog_bridge.py",
+            "bridge": "/path/to/trs80-rev-z/tools/trszog_bridge.py",
             "autoStart": true
         }
     },
@@ -134,7 +163,9 @@ Example `launch.json` configuration for FPGA hardware debugging:
 }
 ```
 
-On launch, `trszog` automatically brings up the debug transport bridge, connects to the debug co-core in the FPGA, loads the `.cmd` executable and `.bds` symbols, and halts the live Z80 CPU at your entry point — allowing hardware breakpoints, live register edits, and single-stepping directly on real silicon!
+On launch, `trszog` automatically brings up the debug transport bridge, connects to the debug co-core in the FPGA, loads the `.cmd` executable and `.bds` symbols, and halts the live Z80 CPU at your entry point — allowing hardware breakpoints, live register edits, and single-stepping directly on real silicon! A "TRS-80 Rev Z" panel opens next to your code showing the machine's live screen; click it and type — your keystrokes go into the machine's keyboard matrix.
+
+Notes: `"serial": "tcp:5555"` targets the headless Verilator machine instead of the board (see above). The bridge script lives in your [trs80-rev-z](https://github.com/TechPrototyper/trs80-rev-z) checkout and needs Python 3 with `pyserial`; if VS Code's `python3` is not the one that has it (a Dock-launched VS Code has a minimal PATH), pin the interpreter with `"python": "/path/to/python3"` in the transport block. A launch configuration snippet ("DeZog: TRS-80 Rev Z") ships with the extension.
 
 ### A real debugging session: [TRS-80 Space Invaders](https://github.com/TechPrototyper/trs80-space-invaders)
 
